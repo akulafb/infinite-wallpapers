@@ -1,8 +1,8 @@
 {
   "id": "aqiba2xv",
-  "name": "cool-wallpapers",
+  "name": "infinite-wallpapers",
   "version": "1.0.0",
-  "productName": "Cool Wallpapers",
+  "productName": "Infinite Wallpapers",
   "description": "Auto-refresh desktop wallpapers by theme",
   "iconDescription": "A macOS desktop wallpaper manager that lets users select from curated themes (Star Wars, nature landscapes, gaming, etc.) or describe wallpapers in natural language, then automatically downloads and rotates high-resolution, real images from the web at customizable intervals (hourly, daily, weekly). The app sources pristine images without watermarks from reputable photo sites. Think of a rotating carousel, a desktop monitor with changing scenes, or a landscape frame that constantly refreshes.",
   "private": true,
@@ -74,6 +74,6 @@
     "host": {
       "minVersion": "0.12.0.0"
     },
-    "updatedAt": 1785351423268
+    "updatedAt": 1785353172134
   }
 }

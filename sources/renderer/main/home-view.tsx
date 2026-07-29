@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Loader2, Pause, Play, RefreshCw, Settings, Wand2 } from "lucide-react";
+import { Ban, Loader2, Pause, Play, RefreshCw, Settings, Shuffle, Wand2 } from "lucide-react";
 import {
   Badge,
   Button,
@@ -17,7 +17,7 @@ import {
 
 import { isPermissionError, wallpaperApi, wallpaperUrl } from "../lib/wallpaper-api";
 import type { Frequency } from "../lib/wallpaper-types";
-import { PRESETS, type Preset } from "./presets";
+import { PRESETS, shuffleThemes, type Preset } from "./presets";
 import { ThemeCard } from "../components/theme-card";
 
 function formatRemaining(ms: number): string {
@@ -36,23 +36,28 @@ function formatRemaining(ms: number): string {
 function Section({
   title,
   description,
+  actions,
   children,
 }: {
   title: string;
   description?: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
-        <Text variant="strong" as="h2">
-          {title}
-        </Text>
-        {description && (
-          <Text variant="mini" color="tertiary">
-            {description}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <Text variant="strong" as="h2">
+            {title}
           </Text>
-        )}
+          {description && (
+            <Text variant="mini" color="tertiary">
+              {description}
+            </Text>
+          )}
+        </div>
+        {actions}
       </div>
       {children}
     </section>
@@ -64,6 +69,14 @@ export function HomeView() {
   const [description, setDescription] = useState("");
   const [permissionError, setPermissionError] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [visiblePresets, setVisiblePresets] = useState<Preset[]>(PRESETS);
+  const [isShuffling, setIsShuffling] = useState(false);
+
+  const shuffleGrid = () => {
+    setVisiblePresets(shuffleThemes(12, visiblePresets.map((p) => p.id)));
+    setIsShuffling(true);
+    window.setTimeout(() => setIsShuffling(false), 400);
+  };
 
   const { data, isLoading } = useQuery({ queryKey: ["config"], queryFn: wallpaperApi.getConfig });
 
@@ -289,9 +302,18 @@ export function HomeView() {
         )}
 
         {/* Theme picker */}
-        <Section title="Theme" description="Tap a theme to switch your wallpaper instantly.">
+        <Section
+          title="Theme"
+          description="Tap a theme to switch your wallpaper instantly."
+          actions={
+            <Button variant="muted" size="small" onClick={shuffleGrid}>
+              <Shuffle className={`size-4 ${isShuffling ? "animate-spin" : ""}`} />
+              Shuffle
+            </Button>
+          }
+        >
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {PRESETS.map((preset) => (
+            {visiblePresets.map((preset) => (
               <ThemeCard
                 key={preset.id}
                 preset={preset}
