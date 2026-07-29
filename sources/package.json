@@ -1,12 +1,17 @@
 {
   "id": "aqiba2xv",
-  "name": "wallpaper-cycle",
+  "name": "cool-wallpapers",
   "version": "1.0.0",
-  "productName": "Wallpaper Cycle",
+  "productName": "Cool Wallpapers",
   "description": "Auto-refresh desktop wallpapers by theme",
   "iconDescription": "A macOS desktop wallpaper manager that lets users select from curated themes (Star Wars, nature landscapes, gaming, etc.) or describe wallpapers in natural language, then automatically downloads and rotates high-resolution, real images from the web at customizable intervals (hourly, daily, weekly). The app sources pristine images without watermarks from reputable photo sites. Think of a rotating carousel, a desktop monitor with changing scenes, or a landscape frame that constantly refreshes.",
   "private": true,
   "type": "module",
+  "appConfig": {
+    "macOS": {
+      "activationPolicy": "accessory"
+    }
+  },
   "scripts": {
     "build": "node glaze.ts build",
     "dev": "node glaze.ts dev",
@@ -54,12 +59,21 @@
   },
   "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
   "glaze": {
-    "capabilities": {},
+    "capabilities": {
+      "ai": {
+        "grades": [
+          "fast"
+        ],
+        "purpose": "Turns your natural-language wallpaper descriptions into effective web image-search queries.",
+        "mode": "optional"
+      }
+    },
     "sdkVersion": "0.12.0.0",
     "createdAt": "2026-07-29T17:57:53.365Z",
     "lastMigration": "tray-retina-icons",
     "host": {
       "minVersion": "0.12.0.0"
-    }
+    },
+    "updatedAt": 1785350027203
   }
 }

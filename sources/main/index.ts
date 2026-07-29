@@ -8,11 +8,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaze/core/backend";
+import { app, BrowserWindow, Menu, protocol, logger, initDevToolsButtonState } from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
+import { createTray } from "./tray.js";
+import { rotationScheduler } from "./services/rotation-scheduler.js";
+import { settingsStore, WALLPAPERS_DIR } from "./services/settings-store.js";
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -21,6 +24,34 @@ const __dirname = path.dirname(__filename);
 // ── IPC Handlers ──────────────────────────────────────────────────────
 // ipcMain is already wired to the IPC server by the runtime bootstrap.
 registerHandlers();
+
+// ── Local wallpaper protocol ──────────────────────────────────────────
+// Serve downloaded wallpaper files to the renderer via wallpaper://img?file=<name>.
+// Register the scheme before any window is created (this runs at module load).
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "wallpaper",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
+
+function contentTypeFor(file: string): string {
+  if (/\.png$/i.test(file)) return "image/png";
+  if (/\.webp$/i.test(file)) return "image/webp";
+  return "image/jpeg";
+}
+
+protocol.handle("wallpaper", (request) => {
+  const file = new URL(request.url).searchParams.get("file");
+  if (!file) {
+    return { statusCode: 400, data: "Missing file", headers: { "Content-Type": "text/plain" } };
+  }
+  // createFileResponse validates the resolved path stays under `root`.
+  return protocol.createFileResponse(file, {
+    root: WALLPAPERS_DIR,
+    headers: { "Content-Type": contentTypeFor(file), "Cache-Control": "no-cache" },
+  });
+});
 
 // ── Dev-only parity harness ───────────────────────────────────────────
 // The parity autotest lives in main/dev/, which is excluded from scaffolded
@@ -59,10 +90,10 @@ async function createMainWindow() {
   // In production: __dirname = build/main, package.json is at ../../package.json
   const packageJsonPath = path.join(__dirname, "..", "..", "package.json");
 
-  const minWindowWidth = 390;
-  const minWindowHeight = 456;
-  const windowWidth = 1000;
-  const windowHeight = 700;
+  const minWindowWidth = 480;
+  const minWindowHeight = 560;
+  const windowWidth = 780;
+  const windowHeight = 760;
   let windowTitle = "Glaze App";
 
   try {
@@ -133,6 +164,16 @@ async function createMainWindow() {
     timestamp: new Date().toISOString(),
     duration_ms: loadURLEndTime - loadURLStartTime,
   });
+}
+
+// Show the main window, creating it if it was closed (menu-bar app has no dock).
+function showMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    void createMainWindow();
+  }
 }
 
 // ── Application menu ──────────────────────────────────────────────────
@@ -218,6 +259,14 @@ app.whenReady().then(async () => {
   await appAiDevHarness?.runAppAiAutotest();
 
   await setupApplicationMenu();
+
+  // Load persisted settings, start the rotation scheduler, and add the menu-bar tray.
+  await settingsStore.load();
+  await rotationScheduler.start();
+  createTray({
+    openMainWindow: showMainWindow,
+    openSettings: () => openSettingsWindow(),
+  });
 
   createMainWindow()
     .then(() => {

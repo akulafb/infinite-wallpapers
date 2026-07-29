@@ -15,10 +15,10 @@ export async function openSettingsWindow(): Promise<void> {
 
   settingsWindow = new BrowserWindow({
     windowKey: "settings",
-    width: 520,
-    height: 300,
-    minWidth: 400,
-    minHeight: 200,
+    width: 560,
+    height: 640,
+    minWidth: 460,
+    minHeight: 520,
     title: "Settings",
     show: false,
     center: true,
