@@ -152,6 +152,25 @@ function interleave(a: Candidate[], b: Candidate[]): Candidate[] {
   return out;
 }
 
+// Cheap single-thumbnail lookup for preset cards. Wallhaven only (free, no key)
+// and SFW so preview tiles stay tasteful regardless of the mature-content toggle.
+// Falls back to progressively simpler queries so specific phrases still yield art.
+export async function wallhavenThumbnail(query: string, category: ThemeCategory): Promise<string | null> {
+  const tryQuery = async (q: string): Promise<string | null> => {
+    const results = await searchWallhaven({ query: q, category, matureContent: false, minWidth: 1280, blocked: [] });
+    return results[0]?.thumbnailUrl ?? null;
+  };
+  const words = query.trim().split(/\s+/);
+  const attempts = [query];
+  if (words.length > 2) attempts.push(words.slice(-2).join(" "));
+  if (words.length > 1) attempts.push(words[words.length - 1]);
+  for (const attempt of attempts) {
+    const url = await tryQuery(attempt);
+    if (url) return url;
+  }
+  return null;
+}
+
 export async function searchImages(opts: SearchOptions): Promise<Candidate[]> {
   const apiKey = await settingsStore.getSerperKey();
   const tasks: Promise<Candidate[]>[] = [];

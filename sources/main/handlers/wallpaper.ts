@@ -7,6 +7,7 @@ import { refineQuery } from "../services/ai-query.js";
 import { refreshTray } from "../tray.js";
 import { rotationScheduler } from "../services/rotation-scheduler.js";
 import { settingsStore } from "../services/settings-store.js";
+import { themeThumbnails } from "../services/theme-thumbnails.js";
 import {
   applyFromHistory,
   applyNext,
@@ -97,6 +98,15 @@ export function registerWallpaperHandlers(): void {
   });
 
   ipcMain.handle("serper:hasKey", async () => settingsStore.hasSerperKey());
+
+  ipcMain.handle("theme:thumbnail", async (_e, args: unknown): Promise<string | null> => {
+    const r = asRecord(args);
+    const presetId = typeof r.presetId === "string" ? r.presetId : "";
+    const query = typeof r.query === "string" ? r.query : "";
+    const category = CATEGORIES.includes(r.category as ThemeCategory) ? (r.category as ThemeCategory) : "general";
+    if (!presetId || !query) return null;
+    return themeThumbnails.get(presetId, query, category);
+  });
 
   ipcMain.handle("wallpaper:preview", async () => previewCandidates());
 

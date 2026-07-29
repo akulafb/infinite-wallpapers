@@ -1,6 +1,13 @@
 // Typed wrappers over the Glaze IPC bridge for Wallpaper Cycle.
 
-import type { AppConfig, ConfigResult, RotationState, ThemeConfig, WallpaperRecord } from "./wallpaper-types";
+import type {
+  AppConfig,
+  ConfigResult,
+  RotationState,
+  ThemeCategory,
+  ThemeConfig,
+  WallpaperRecord,
+} from "./wallpaper-types";
 
 const ipc = () => window.glazeAPI.glaze.ipc;
 
@@ -16,6 +23,8 @@ export const wallpaperApi = {
     ipc().invoke<{ config: AppConfig; aiBlocked?: string }>("theme:setCustom", description),
   updateSettings: (patch: Partial<Pick<AppConfig, "frequency" | "matureContent" | "aiAssist" | "minWidth">>) =>
     ipc().invoke<AppConfig>("settings:update", patch),
+  getThemeThumbnail: (presetId: string, query: string, category: ThemeCategory) =>
+    ipc().invoke<string | null>("theme:thumbnail", { presetId, query, category }),
   setSerperKey: (key: string) => ipc().invoke<boolean>("serper:setKey", key),
   hasSerperKey: () => ipc().invoke<boolean>("serper:hasKey"),
   next: () => ipc().invoke<WallpaperRecord>("wallpaper:next"),

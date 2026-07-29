@@ -33,12 +33,27 @@ function formatRemaining(ms: number): string {
   return `${seconds}s`;
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-3">
-      <Text variant="strong" as="h2">
-        {title}
-      </Text>
+      <div className="flex flex-col gap-0.5">
+        <Text variant="strong" as="h2">
+          {title}
+        </Text>
+        {description && (
+          <Text variant="mini" color="tertiary">
+            {description}
+          </Text>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -274,8 +289,8 @@ export function HomeView() {
         )}
 
         {/* Theme picker */}
-        <Section title="Theme">
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        <Section title="Theme" description="Tap a theme to switch your wallpaper instantly.">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {PRESETS.map((preset) => (
               <ThemeCard
                 key={preset.id}
@@ -290,7 +305,8 @@ export function HomeView() {
         </Section>
 
         {/* Custom description */}
-        <Section title="Describe your own">
+        <Section title="Describe your own" description="Type anything — franchises, games, or a specific scene.">
+
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
