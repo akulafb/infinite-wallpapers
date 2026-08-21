@@ -1,0 +1,5 @@
+# OS files
+.DS_Store
+
+# Dependencies (inside sources/)
+sources/node_modules/
