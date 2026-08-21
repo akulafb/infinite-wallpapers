@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Agent context (auto-generated, not worth versioning)
+.glaze_memory/
+
+# App icons (binary, auto-generated)
+app-icon.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Glaze agent temporary files
+tmp/*
+
+# Glaze-managed external-agent resources
+# skills/ are symlinks into ~/Library/Application Support (machine-local, not portable)
+.claude/rules/
+.claude/skills/
+.claude/.cc-writes/
+.agents/skills
+.cursor/rules/
+GLAZE-APP-GUIDE.md
+GLAZE-AGENT-INSTRUCTIONS.md
+.glaze-runtime-context.md
