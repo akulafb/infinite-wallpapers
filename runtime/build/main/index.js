@@ -7,7 +7,14 @@ const require = __createRequire__(import.meta.url);
 import * as fs5 from "fs";
 import * as path7 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
-import { app as app5, BrowserWindow as BrowserWindow2, Menu as Menu2, protocol, logger as logger14, initDevToolsButtonState } from "@glaze/core/backend";
+import {
+  app as app5,
+  BrowserWindow as BrowserWindow2,
+  Menu as Menu2,
+  protocol,
+  logger as logger14,
+  initDevToolsButtonState
+} from "@glaze/core/backend";
 
 // main/handlers/index.ts
 import * as path6 from "path";
@@ -58,7 +65,9 @@ async function refineQuery(description) {
     return { query: cleaned || raw };
   } catch (error) {
     if (error instanceof GlazeAIError) {
-      logger2.info("ai-query", "AI unavailable, falling back to raw description", { state: error.state });
+      logger2.info("ai-query", "AI unavailable, falling back to raw description", {
+        state: error.state
+      });
       return { query: raw, blocked: error.state };
     }
     logger2.error("ai-query", "AI query refinement failed", error);
@@ -77,7 +86,7 @@ import * as path3 from "path";
 import { ipcMain, logger as logger7 } from "@glaze/core/backend";
 
 // main/services/image-search.ts
-import { logger as logger4 } from "@glaze/core/backend";
+import { logger as logger4, screen } from "@glaze/core/backend";
 
 // main/services/settings-store.ts
 import * as fs from "fs";
@@ -173,6 +182,31 @@ var SettingsStore = class {
     });
     return this.saveChain;
   }
+  // Drop config references to cached images that are no longer on disk. An
+  // earlier build pruned the cache without protecting files still referenced by
+  // history, so existing installs carry history entries whose image is gone —
+  // which renders as a broken tile in the Recent strip. Runs once at startup.
+  async reconcileHistory() {
+    const cfg = await this.load();
+    const onDisk = async (file) => {
+      try {
+        await fs.promises.access(path.join(WALLPAPERS_DIR, file));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const present = await Promise.all(cfg.history.map((record) => onDisk(record.file)));
+    const history = cfg.history.filter((_, index) => present[index]);
+    const current = cfg.current;
+    const currentGone = current !== null && !await onDisk(current.file);
+    if (history.length === cfg.history.length && !currentGone) return;
+    logger3.info("settings", "Dropped config references to missing wallpaper files", {
+      removedFromHistory: cfg.history.length - history.length,
+      clearedCurrent: currentGone
+    });
+    await this.update({ history, current: currentGone ? null : current });
+  }
   // ── Serper API key (encrypted) ─────────────────────────────────────
   async hasSerperKey() {
     try {
@@ -233,10 +267,54 @@ function hostBlocked(url) {
   const lower = url.toLowerCase();
   return BLOCKED_DOMAINS.some((d) => lower.includes(d));
 }
-function landscapeEnough(w, h, minWidth) {
+var DEFAULT_ASPECT = 16 / 9;
+var MIN_ASPECT = 1.2;
+var MAX_ASPECT = 4;
+var ASPECT_TOLERANCE = 1.35;
+var ASPECT_CACHE_MS = 6e4;
+var WALLHAVEN_RATIO_BUCKETS = [
+  { aspect: 4 / 3, ratios: "4x3,16x10" },
+  { aspect: 16 / 10, ratios: "16x10,16x9" },
+  { aspect: 16 / 9, ratios: "16x9,16x10" },
+  { aspect: 21 / 9, ratios: "21x9,16x9" },
+  { aspect: 32 / 9, ratios: "32x9,21x9" }
+];
+var aspectCache = null;
+function displayAspect() {
+  const now = Date.now();
+  if (aspectCache && now - aspectCache.at < ASPECT_CACHE_MS) return aspectCache.value;
+  let aspect = DEFAULT_ASPECT;
+  try {
+    const display = screen.getPrimaryDisplay();
+    const width = display.size.width || display.bounds.width;
+    const height = display.size.height || display.bounds.height;
+    if (width > 0 && height > 0) aspect = width / height;
+  } catch (e) {
+    logger4.warn("search", "Primary display unavailable; assuming 16:9", e);
+  }
+  const clamped = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, aspect));
+  aspectCache = { value: clamped, at: now };
+  return clamped;
+}
+function wallhavenRatios(aspect) {
+  let best = WALLHAVEN_RATIO_BUCKETS[0];
+  let bestDistance = Infinity;
+  for (const bucket of WALLHAVEN_RATIO_BUCKETS) {
+    const distance = Math.abs(Math.log(aspect / bucket.aspect));
+    if (distance < bestDistance) {
+      best = bucket;
+      bestDistance = distance;
+    }
+  }
+  return best.ratios;
+}
+function wallhavenAtleast(minWidth, aspect) {
+  return `${minWidth}x${Math.min(1080, Math.round(minWidth / aspect))}`;
+}
+function suitableForDisplay(w, h, minWidth, aspect) {
   if (w < minWidth || h <= 0) return false;
   const ratio = w / h;
-  return ratio >= 1.2 && ratio <= 2.5;
+  return ratio >= Math.max(MIN_ASPECT, aspect / ASPECT_TOLERANCE) && ratio <= aspect * ASPECT_TOLERANCE;
 }
 async function searchSerper(apiKey, opts) {
   const res = await fetch("https://google.serper.dev/images", {
@@ -256,7 +334,9 @@ async function searchSerper(apiKey, opts) {
   }
   const data = await res.json();
   const images = data.images ?? [];
-  return images.filter((img) => Boolean(img.imageUrl)).map((img) => ({
+  return images.filter(
+    (img) => Boolean(img.imageUrl)
+  ).map((img) => ({
     imageUrl: img.imageUrl,
     thumbnailUrl: img.thumbnailUrl ?? img.imageUrl,
     pageUrl: img.link ?? img.imageUrl,
@@ -280,19 +360,20 @@ function wallhavenCategories(category) {
   }
 }
 async function searchWallhaven(opts) {
+  const aspect = displayAspect();
   const params = new URLSearchParams({
     q: opts.query,
     categories: wallhavenCategories(opts.category),
     purity: opts.matureContent ? "110" : "100",
     // sfw(+sketchy); nsfw needs an API key
     sorting: "relevance",
-    atleast: `${opts.minWidth}x1080`,
-    ratios: "16x9,16x10",
+    atleast: wallhavenAtleast(opts.minWidth, aspect),
+    ratios: wallhavenRatios(aspect),
     ai_art_filter: "1"
     // exclude AI-generated art where honored
   });
   const res = await fetch(`https://wallhaven.cc/api/v1/search?${params.toString()}`, {
-    headers: { "User-Agent": "WallpaperCycle/1.0" },
+    headers: { "User-Agent": "InfiniteWallpapers/1.0" },
     signal: AbortSignal.timeout(2e4)
   });
   if (!res.ok) throw new Error(`Wallhaven error: ${res.status} ${res.statusText}`);
@@ -319,7 +400,13 @@ function interleave(a, b) {
 }
 async function wallhavenThumbnail(query, category) {
   const tryQuery = async (q) => {
-    const results = await searchWallhaven({ query: q, category, matureContent: false, minWidth: 1280, blocked: [] });
+    const results = await searchWallhaven({
+      query: q,
+      category,
+      matureContent: false,
+      minWidth: 1280,
+      blocked: []
+    });
     return results[0]?.thumbnailUrl ?? null;
   };
   const words = query.trim().split(/\s+/);
@@ -335,17 +422,24 @@ async function wallhavenThumbnail(query, category) {
 async function searchImages(opts) {
   const apiKey = await settingsStore.getSerperKey();
   const tasks = [];
-  if (apiKey) tasks.push(searchSerper(apiKey, opts).catch((e) => (logger4.error("search", "Serper failed", e), [])));
-  tasks.push(searchWallhaven(opts).catch((e) => (logger4.error("search", "Wallhaven failed", e), [])));
+  if (apiKey)
+    tasks.push(
+      searchSerper(apiKey, opts).catch((e) => (logger4.error("search", "Serper failed", e), []))
+    );
+  tasks.push(
+    searchWallhaven(opts).catch((e) => (logger4.error("search", "Wallhaven failed", e), []))
+  );
   const [serperResults = [], wallhavenResults = []] = apiKey ? await Promise.all(tasks) : [[], await tasks[0]];
   const merged = interleave(serperResults, wallhavenResults);
+  const aspect = displayAspect();
   const blockedSet = new Set(opts.blocked);
   const seen = /* @__PURE__ */ new Set();
   const filtered = [];
   for (const c of merged) {
     if (seen.has(c.imageUrl) || blockedSet.has(c.imageUrl)) continue;
     if (hostBlocked(c.pageUrl) || hostBlocked(c.imageUrl)) continue;
-    if (c.provider !== "wallhaven" && !landscapeEnough(c.width, c.height, opts.minWidth)) continue;
+    if (c.provider !== "wallhaven" && !suitableForDisplay(c.width, c.height, opts.minWidth, aspect))
+      continue;
     seen.add(c.imageUrl);
     filtered.push(c);
   }
@@ -364,7 +458,8 @@ function extensionFor(contentType, url) {
   if (/png/i.test(contentType)) return ".png";
   if (/webp/i.test(contentType)) return ".webp";
   const fromUrl = path2.extname(new URL(url).pathname).toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".webp"].includes(fromUrl)) return fromUrl === ".jpeg" ? ".jpg" : fromUrl;
+  if ([".jpg", ".jpeg", ".png", ".webp"].includes(fromUrl))
+    return fromUrl === ".jpeg" ? ".jpg" : fromUrl;
   return ".jpg";
 }
 async function downloadImage(imageUrl) {
@@ -373,13 +468,15 @@ async function downloadImage(imageUrl) {
   try {
     const res = await fetch(imageUrl, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh) WallpaperCycle/1.0" }
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh) InfiniteWallpapers/1.0" }
     });
     if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
     const contentType = res.headers.get("content-type") ?? "";
-    if (!/image\//i.test(contentType)) throw new Error(`Not an image (content-type: ${contentType || "unknown"})`);
+    if (!/image\//i.test(contentType))
+      throw new Error(`Not an image (content-type: ${contentType || "unknown"})`);
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength < MIN_BYTES) throw new Error("Downloaded image is too small to be a real wallpaper");
+    if (buf.byteLength < MIN_BYTES)
+      throw new Error("Downloaded image is too small to be a real wallpaper");
     await fs2.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
     const id = crypto.randomUUID();
     const file = `${id}${extensionFor(contentType, imageUrl)}`;
@@ -391,10 +488,13 @@ async function downloadImage(imageUrl) {
     clearTimeout(timeout);
   }
 }
-async function pruneCache(keepFiles = []) {
+async function pruneCache() {
   try {
     const entries = await fs2.promises.readdir(WALLPAPERS_DIR);
     if (entries.length <= MAX_CACHED_FILES) return;
+    const cfg = settingsStore.get();
+    const keep = new Set(cfg.history.map((record) => record.file));
+    if (cfg.current) keep.add(cfg.current.file);
     const stats = await Promise.all(
       entries.map(async (name) => ({
         name,
@@ -402,8 +502,10 @@ async function pruneCache(keepFiles = []) {
       }))
     );
     stats.sort((a, b) => b.mtime - a.mtime);
-    const toDelete = stats.slice(MAX_CACHED_FILES).filter((s) => !keepFiles.includes(s.name));
-    await Promise.all(toDelete.map((s) => fs2.promises.rm(path2.join(WALLPAPERS_DIR, s.name), { force: true })));
+    const toDelete = stats.slice(MAX_CACHED_FILES).filter((s) => !keep.has(s.name));
+    await Promise.all(
+      toDelete.map((s) => fs2.promises.rm(path2.join(WALLPAPERS_DIR, s.name), { force: true }))
+    );
   } catch (error) {
     logger5.error("wallpaper", "Cache prune failed", error);
   }
@@ -442,7 +544,7 @@ async function setWallpaper(filePath) {
     const stderr = String(error.stderr ?? error.message ?? "");
     if (/not authorized|-1743|1743|permission/i.test(stderr)) {
       throw new WallpaperPermissionError(
-        "Wallpaper Cycle needs Automation permission to control System Events. Open System Settings \u203A Privacy & Security \u203A Automation and enable it for this app."
+        "Infinite Wallpapers needs Automation permission to control System Events. Open System Settings \u203A Privacy & Security \u203A Automation and enable it for this app."
       );
     }
     logger6.error("wallpaper", "Failed to set wallpaper", { stderr });
@@ -462,7 +564,9 @@ async function checkAutomationPermission() {
 // main/services/wallpaper-service.ts
 var NoImagesError = class extends Error {
   constructor() {
-    super("No suitable wallpapers were found for this theme. Try a different theme or turn on mature content.");
+    super(
+      "No suitable wallpapers were found for this theme. Try a different theme or turn on mature content."
+    );
     this.name = "NoImagesError";
   }
 };
@@ -496,7 +600,9 @@ async function applyNext(reason) {
   const candidates = await search();
   if (candidates.length === 0) throw new NoImagesError();
   const recent = new Set(
-    [cfg.current?.imageUrl, ...cfg.history.slice(0, 10).map((h) => h.imageUrl)].filter(Boolean)
+    [cfg.current?.imageUrl, ...cfg.history.slice(0, 10).map((h) => h.imageUrl)].filter(
+      Boolean
+    )
   );
   const ordered = pickFresh(candidates, recent);
   let lastError = null;
@@ -515,9 +621,12 @@ async function applyNext(reason) {
         themeLabel: cfg.theme.label,
         appliedAt: Date.now()
       };
-      const history = [record, ...cfg.history.filter((h) => h.imageUrl !== record.imageUrl)].slice(0, 30);
+      const history = [record, ...cfg.history.filter((h) => h.imageUrl !== record.imageUrl)].slice(
+        0,
+        30
+      );
       await settingsStore.update({ current: record, history });
-      void pruneCache(history.map((h) => h.file));
+      void pruneCache();
       logger7.info("wallpaper", "Applied new wallpaper", { reason, provider: record.provider });
       ipcMain.broadcast("wallpaper:changed", { record });
       return record;
@@ -556,12 +665,21 @@ var INTERVAL_MS = {
   daily: 24 * 60 * 60 * 1e3,
   weekly: 7 * 24 * 60 * 60 * 1e3
 };
+var WATCHDOG_MS = 60 * 1e3;
 var RotationScheduler = class {
   timer = null;
+  watchdog = null;
+  // Set while a rotation is running so the timer and the watchdog — which can
+  // both come due at once — never start overlapping rotations.
+  ticking = false;
   clear() {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
     }
   }
   broadcastState() {
@@ -572,32 +690,76 @@ var RotationScheduler = class {
       nextRunAt: cfg.nextRunAt
     });
   }
-  // (Re)compute the next fire time and arm the timer.
+  // Arm both the countdown and the watchdog for an already-decided due time.
+  arm(nextRunAt) {
+    this.clear();
+    this.timer = setTimeout(() => void this.tick(), Math.max(0, nextRunAt - Date.now()));
+    this.watchdog = setInterval(() => {
+      const due = settingsStore.get().nextRunAt;
+      if (due !== null && Date.now() >= due) void this.tick();
+    }, WATCHDOG_MS);
+  }
+  // Clear any timer and drop the persisted due time (paused / manual).
+  async disarm() {
+    this.clear();
+    if (settingsStore.get().nextRunAt !== null) await settingsStore.update({ nextRunAt: null });
+    this.broadcastState();
+  }
+  // Start a fresh full interval from now. Used for explicit user actions
+  // (next/skip, frequency change, pause/resume) where restarting the clock is
+  // the intended behaviour.
   async reschedule() {
     this.clear();
     const cfg = settingsStore.get();
     if (cfg.paused || cfg.frequency === "manual") {
-      if (cfg.nextRunAt !== null) await settingsStore.update({ nextRunAt: null });
-      this.broadcastState();
+      await this.disarm();
       return;
     }
-    const interval = INTERVAL_MS[cfg.frequency];
-    const nextRunAt = Date.now() + interval;
+    const nextRunAt = Date.now() + INTERVAL_MS[cfg.frequency];
     await settingsStore.update({ nextRunAt });
-    this.timer = setTimeout(() => void this.tick(), interval);
+    this.arm(nextRunAt);
+    this.broadcastState();
+  }
+  // Startup path: honour the persisted due time instead of resetting it.
+  async armFromPersisted() {
+    this.clear();
+    const cfg = settingsStore.get();
+    if (cfg.paused || cfg.frequency === "manual") {
+      await this.disarm();
+      return;
+    }
+    if (cfg.nextRunAt === null) {
+      await this.reschedule();
+      return;
+    }
+    if (Date.now() >= cfg.nextRunAt) {
+      logger8.info("rotation", `Rotation overdue by ${Date.now() - cfg.nextRunAt}ms; catching up`);
+      void this.tick();
+      return;
+    }
+    this.arm(cfg.nextRunAt);
     this.broadcastState();
   }
   async tick() {
+    if (this.ticking) return;
+    this.ticking = true;
+    this.clear();
     try {
       await applyNext("scheduled");
     } catch (error) {
       logger8.error("rotation", "Scheduled rotation failed", error);
+    } finally {
+      this.ticking = false;
+      try {
+        await this.reschedule();
+      } catch (error) {
+        logger8.error("rotation", "Failed to reschedule after rotation", error);
+      }
     }
-    await this.reschedule();
   }
   async start() {
-    await this.reschedule();
     app2.on("before-quit", () => this.clear());
+    await this.armFromPersisted();
   }
 };
 var rotationScheduler = new RotationScheduler();
@@ -643,17 +805,17 @@ function buildMenu() {
       }
     },
     { type: "separator" },
-    { label: "Open Wallpaper Cycle", click: () => callbacks.openMainWindow() },
+    { label: "Open Infinite Wallpapers", click: () => callbacks.openMainWindow() },
     { label: "Settings\u2026", click: () => void callbacks.openSettings() },
     { type: "separator" },
-    { label: "Quit Wallpaper Cycle", click: () => app3.quit() }
+    { label: "Quit Infinite Wallpapers", click: () => app3.quit() }
   ]);
 }
 function createTray(cbs) {
   callbacks = cbs;
   if (tray && !tray.isDestroyed()) return;
   tray = new Tray("photo.on.rectangle.angled", TRAY_GUID);
-  tray.setToolTip("Wallpaper Cycle");
+  tray.setToolTip("Infinite Wallpapers");
   tray.setContextMenu(buildMenu());
   app3.on("before-quit", () => {
     tray?.destroy();
@@ -737,6 +899,12 @@ function parseTheme(value) {
   if (!id || !label || !query) throw new Error("Theme requires id, label and query");
   return { id, label, query, kind, category };
 }
+async function broadcastConfig() {
+  ipcMain3.broadcast("config:changed", {
+    config: settingsStore.get(),
+    hasSerperKey: await settingsStore.hasSerperKey()
+  });
+}
 async function state() {
   const cfg = settingsStore.get();
   return { paused: cfg.paused, frequency: cfg.frequency, nextRunAt: cfg.nextRunAt };
@@ -786,11 +954,13 @@ function registerWallpaperHandlers() {
     const config = await settingsStore.update(next);
     if (next.frequency !== void 0) await rotationScheduler.reschedule();
     refreshTray();
+    await broadcastConfig();
     return config;
   });
   ipcMain3.handle("serper:setKey", async (_e, key) => {
     if (typeof key !== "string") throw new Error("Invalid key");
     await settingsStore.setSerperKey(key);
+    await broadcastConfig();
     return settingsStore.hasSerperKey();
   });
   ipcMain3.handle("serper:hasKey", async () => settingsStore.hasSerperKey());
@@ -833,7 +1003,7 @@ function registerWallpaperHandlers() {
   });
   ipcMain3.handle("rotation:getState", async () => state());
   ipcMain3.handle("permissions:checkAutomation", async () => checkAutomationPermission());
-  logger11.info("handlers", "\u2713 Wallpaper Cycle handlers registered");
+  logger11.info("handlers", "\u2713 Infinite Wallpapers handlers registered");
 }
 
 // main/windows/settings-window.ts
@@ -1104,6 +1274,7 @@ app5.whenReady().then(async () => {
   await appAiDevHarness?.runAppAiAutotest();
   await setupApplicationMenu();
   await settingsStore.load();
+  await settingsStore.reconcileHistory();
   await rotationScheduler.start();
   createTray({
     openMainWindow: showMainWindow,

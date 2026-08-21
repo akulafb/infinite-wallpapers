@@ -2,9 +2,14 @@
   "id": "aqiba2xv",
   "name": "infinite-wallpapers",
   "productName": "Infinite Wallpapers",
-  "description": "Auto-refresh desktop wallpapers by theme",
   "version": "1.0.0",
+  "description": "Consantly changing wallpapers by theme",
   "type": "module",
+  "appConfig": {
+    "macOS": {
+      "activationPolicy": "accessory"
+    }
+  },
   "glaze": {
     "capabilities": {
       "ai": {
@@ -21,13 +26,8 @@
     "host": {
       "minVersion": "0.14.0.0"
     },
-    "updatedAt": 1785352505270,
+    "updatedAt": 1787302408583,
     "appId": "wallpaper-cycle-local-aqiba2xv",
     "variant": "local"
-  },
-  "appConfig": {
-    "macOS": {
-      "activationPolicy": "accessory"
-    }
   }
 }
