@@ -2,7 +2,7 @@
 // (needs a user-supplied API key); Wallhaven is a free, no-key wallpaper source.
 // Results are merged, filtered for desktop suitability, and de-duplicated.
 
-import { logger } from "@glaze/core/backend";
+import { logger, screen } from "@glaze/core/backend";
 
 import { settingsStore } from "./settings-store.js";
 import type { Candidate, ThemeCategory } from "./types.js";
@@ -39,10 +39,78 @@ function hostBlocked(url: string): boolean {
   return BLOCKED_DOMAINS.some((d) => lower.includes(d));
 }
 
-function landscapeEnough(w: number, h: number, minWidth: number): boolean {
+// ── Display-aware aspect matching ────────────────────────────────────
+// macOS fills the desktop from the image, so anything far from the display's own
+// aspect gets cropped or letterboxed. We target the primary display instead of a
+// fixed 16:9 band, which would mis-serve 21:9 and 32:9 users (and vice versa).
+
+const DEFAULT_ASPECT = 16 / 9; // used until the display is readable
+const MIN_ASPECT = 1.2; // portrait/rotated displays still get landscape wallpaper
+const MAX_ASPECT = 4.0; // guards against absurd reported sizes (48x9 is 5.33)
+const ASPECT_TOLERANCE = 1.35; // multiplicative band; ~16:9 => 1.32..2.40
+const ASPECT_CACHE_MS = 60_000; // displays change rarely; never query per candidate
+
+// Wallhaven indexes a fixed set of ratio buckets, so we snap to the nearest one
+// and add a neighbour — asking for a single niche bucket returns almost nothing.
+const WALLHAVEN_RATIO_BUCKETS = [
+  { aspect: 4 / 3, ratios: "4x3,16x10" },
+  { aspect: 16 / 10, ratios: "16x10,16x9" },
+  { aspect: 16 / 9, ratios: "16x9,16x10" },
+  { aspect: 21 / 9, ratios: "21x9,16x9" },
+  { aspect: 32 / 9, ratios: "32x9,21x9" },
+] as const;
+
+let aspectCache: { value: number; at: number } | null = null;
+
+// Primary-display aspect ratio, clamped and memoised. Reads `screen` (a public
+// @glaze/core/backend export) lazily so a not-yet-ready backend just degrades to
+// the 16:9 default rather than throwing mid-search.
+function displayAspect(): number {
+  const now = Date.now();
+  if (aspectCache && now - aspectCache.at < ASPECT_CACHE_MS) return aspectCache.value;
+  let aspect = DEFAULT_ASPECT;
+  try {
+    const display = screen.getPrimaryDisplay();
+    const width = display.size.width || display.bounds.width;
+    const height = display.size.height || display.bounds.height;
+    if (width > 0 && height > 0) aspect = width / height;
+  } catch (e) {
+    logger.warn("search", "Primary display unavailable; assuming 16:9", e);
+  }
+  const clamped = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, aspect));
+  aspectCache = { value: clamped, at: now };
+  return clamped;
+}
+
+// Nearest Wallhaven bucket by log-distance, so 2.33 snaps to 21x9 rather than
+// being pulled toward the numerically closer-but-perceptually-wrong 16x9.
+function wallhavenRatios(aspect: number): string {
+  let best: (typeof WALLHAVEN_RATIO_BUCKETS)[number] = WALLHAVEN_RATIO_BUCKETS[0];
+  let bestDistance = Infinity;
+  for (const bucket of WALLHAVEN_RATIO_BUCKETS) {
+    const distance = Math.abs(Math.log(aspect / bucket.aspect));
+    if (distance < bestDistance) {
+      best = bucket;
+      bestDistance = distance;
+    }
+  }
+  return best.ratios;
+}
+
+// `atleast` is width x height, so a fixed 1080 height would reject every genuine
+// ultrawide image (a 1920-wide 32:9 shot is only 540 tall). Derive the height from
+// the target aspect, but never demand more than the original 1080 floor.
+function wallhavenAtleast(minWidth: number, aspect: number): string {
+  return `${minWidth}x${Math.min(1080, Math.round(minWidth / aspect))}`;
+}
+
+function suitableForDisplay(w: number, h: number, minWidth: number, aspect: number): boolean {
   if (w < minWidth || h <= 0) return false;
   const ratio = w / h;
-  return ratio >= 1.2 && ratio <= 2.5; // desktop-ish (4:3 .. 21:9-ish)
+  // MIN_ASPECT floor: even on a 4:3 display, a near-square image is not a wallpaper.
+  return (
+    ratio >= Math.max(MIN_ASPECT, aspect / ASPECT_TOLERANCE) && ratio <= aspect * ASPECT_TOLERANCE
+  );
 }
 
 // ── Serper.dev (Google Images, whole web) ────────────────────────────
@@ -75,7 +143,9 @@ async function searchSerper(apiKey: string, opts: SearchOptions): Promise<Candid
   const data = (await res.json()) as { images?: SerperImage[] };
   const images = data.images ?? [];
   return images
-    .filter((img): img is Required<Pick<SerperImage, "imageUrl">> & SerperImage => Boolean(img.imageUrl))
+    .filter((img): img is Required<Pick<SerperImage, "imageUrl">> & SerperImage =>
+      Boolean(img.imageUrl),
+    )
     .map((img) => ({
       imageUrl: img.imageUrl!,
       thumbnailUrl: img.thumbnailUrl ?? img.imageUrl!,
@@ -112,17 +182,18 @@ function wallhavenCategories(category: ThemeCategory): string {
 }
 
 async function searchWallhaven(opts: SearchOptions): Promise<Candidate[]> {
+  const aspect = displayAspect();
   const params = new URLSearchParams({
     q: opts.query,
     categories: wallhavenCategories(opts.category),
     purity: opts.matureContent ? "110" : "100", // sfw(+sketchy); nsfw needs an API key
     sorting: "relevance",
-    atleast: `${opts.minWidth}x1080`,
-    ratios: "16x9,16x10",
+    atleast: wallhavenAtleast(opts.minWidth, aspect),
+    ratios: wallhavenRatios(aspect),
     ai_art_filter: "1", // exclude AI-generated art where honored
   });
   const res = await fetch(`https://wallhaven.cc/api/v1/search?${params.toString()}`, {
-    headers: { "User-Agent": "WallpaperCycle/1.0" },
+    headers: { "User-Agent": "InfiniteWallpapers/1.0" },
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Wallhaven error: ${res.status} ${res.statusText}`);
@@ -155,9 +226,18 @@ function interleave(a: Candidate[], b: Candidate[]): Candidate[] {
 // Cheap single-thumbnail lookup for preset cards. Wallhaven only (free, no key)
 // and SFW so preview tiles stay tasteful regardless of the mature-content toggle.
 // Falls back to progressively simpler queries so specific phrases still yield art.
-export async function wallhavenThumbnail(query: string, category: ThemeCategory): Promise<string | null> {
+export async function wallhavenThumbnail(
+  query: string,
+  category: ThemeCategory,
+): Promise<string | null> {
   const tryQuery = async (q: string): Promise<string | null> => {
-    const results = await searchWallhaven({ query: q, category, matureContent: false, minWidth: 1280, blocked: [] });
+    const results = await searchWallhaven({
+      query: q,
+      category,
+      matureContent: false,
+      minWidth: 1280,
+      blocked: [],
+    });
     return results[0]?.thumbnailUrl ?? null;
   };
   const words = query.trim().split(/\s+/);
@@ -174,12 +254,20 @@ export async function wallhavenThumbnail(query: string, category: ThemeCategory)
 export async function searchImages(opts: SearchOptions): Promise<Candidate[]> {
   const apiKey = await settingsStore.getSerperKey();
   const tasks: Promise<Candidate[]>[] = [];
-  if (apiKey) tasks.push(searchSerper(apiKey, opts).catch((e) => (logger.error("search", "Serper failed", e), [])));
-  tasks.push(searchWallhaven(opts).catch((e) => (logger.error("search", "Wallhaven failed", e), [])));
+  if (apiKey)
+    tasks.push(
+      searchSerper(apiKey, opts).catch((e) => (logger.error("search", "Serper failed", e), [])),
+    );
+  tasks.push(
+    searchWallhaven(opts).catch((e) => (logger.error("search", "Wallhaven failed", e), [])),
+  );
 
-  const [serperResults = [], wallhavenResults = []] = apiKey ? await Promise.all(tasks) : [[], await tasks[0]];
+  const [serperResults = [], wallhavenResults = []] = apiKey
+    ? await Promise.all(tasks)
+    : [[], await tasks[0]];
 
   const merged = interleave(serperResults, wallhavenResults);
+  const aspect = displayAspect(); // hoisted: one display read for the whole pass
   const blockedSet = new Set(opts.blocked);
   const seen = new Set<string>();
   const filtered: Candidate[] = [];
@@ -187,7 +275,8 @@ export async function searchImages(opts: SearchOptions): Promise<Candidate[]> {
     if (seen.has(c.imageUrl) || blockedSet.has(c.imageUrl)) continue;
     if (hostBlocked(c.pageUrl) || hostBlocked(c.imageUrl)) continue;
     // Wallhaven already enforces atleast/ratios; trust it even if dims are 0.
-    if (c.provider !== "wallhaven" && !landscapeEnough(c.width, c.height, opts.minWidth)) continue;
+    if (c.provider !== "wallhaven" && !suitableForDisplay(c.width, c.height, opts.minWidth, aspect))
+      continue;
     seen.add(c.imageUrl);
     filtered.push(c);
   }

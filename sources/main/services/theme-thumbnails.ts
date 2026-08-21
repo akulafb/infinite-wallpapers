@@ -26,7 +26,10 @@ class ThemeThumbnails {
   private async loadCache(): Promise<Record<string, Entry>> {
     if (this.cache) return this.cache;
     try {
-      this.cache = JSON.parse(await fs.promises.readFile(CACHE_PATH, "utf-8")) as Record<string, Entry>;
+      this.cache = JSON.parse(await fs.promises.readFile(CACHE_PATH, "utf-8")) as Record<
+        string,
+        Entry
+      >;
     } catch {
       this.cache = {};
     }

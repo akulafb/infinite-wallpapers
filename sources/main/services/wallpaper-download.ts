@@ -7,7 +7,7 @@ import * as path from "path";
 
 import { logger } from "@glaze/core/backend";
 
-import { WALLPAPERS_DIR } from "./settings-store.js";
+import { settingsStore, WALLPAPERS_DIR } from "./settings-store.js";
 
 const MAX_CACHED_FILES = 40;
 const MIN_BYTES = 20 * 1024; // reject tiny "images" that are really errors/thumbs
@@ -17,7 +17,8 @@ function extensionFor(contentType: string, url: string): string {
   if (/png/i.test(contentType)) return ".png";
   if (/webp/i.test(contentType)) return ".webp";
   const fromUrl = path.extname(new URL(url).pathname).toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".webp"].includes(fromUrl)) return fromUrl === ".jpeg" ? ".jpg" : fromUrl;
+  if ([".jpg", ".jpeg", ".png", ".webp"].includes(fromUrl))
+    return fromUrl === ".jpeg" ? ".jpg" : fromUrl;
   return ".jpg";
 }
 
@@ -33,14 +34,16 @@ export async function downloadImage(imageUrl: string): Promise<DownloadedImage> 
   try {
     const res = await fetch(imageUrl, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh) WallpaperCycle/1.0" },
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh) InfiniteWallpapers/1.0" },
     });
     if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
     const contentType = res.headers.get("content-type") ?? "";
-    if (!/image\//i.test(contentType)) throw new Error(`Not an image (content-type: ${contentType || "unknown"})`);
+    if (!/image\//i.test(contentType))
+      throw new Error(`Not an image (content-type: ${contentType || "unknown"})`);
 
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength < MIN_BYTES) throw new Error("Downloaded image is too small to be a real wallpaper");
+    if (buf.byteLength < MIN_BYTES)
+      throw new Error("Downloaded image is too small to be a real wallpaper");
 
     await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
     const id = crypto.randomUUID();
@@ -54,11 +57,18 @@ export async function downloadImage(imageUrl: string): Promise<DownloadedImage> 
   }
 }
 
-// Keep only the most recently modified MAX_CACHED_FILES images.
-export async function pruneCache(keepFiles: string[] = []): Promise<void> {
+// Keep only the most recently modified MAX_CACHED_FILES images, never deleting
+// one that config still references. The protected set is derived here rather than
+// passed in: as an optional `keepFiles` parameter it was opt-in, and the call in
+// downloadImage() omitted it — silently deleting live history images and leaving
+// the Recent strip rendering broken tiles.
+export async function pruneCache(): Promise<void> {
   try {
     const entries = await fs.promises.readdir(WALLPAPERS_DIR);
     if (entries.length <= MAX_CACHED_FILES) return;
+    const cfg = settingsStore.get();
+    const keep = new Set(cfg.history.map((record) => record.file));
+    if (cfg.current) keep.add(cfg.current.file);
     const stats = await Promise.all(
       entries.map(async (name) => ({
         name,
@@ -66,8 +76,10 @@ export async function pruneCache(keepFiles: string[] = []): Promise<void> {
       })),
     );
     stats.sort((a, b) => b.mtime - a.mtime);
-    const toDelete = stats.slice(MAX_CACHED_FILES).filter((s) => !keepFiles.includes(s.name));
-    await Promise.all(toDelete.map((s) => fs.promises.rm(path.join(WALLPAPERS_DIR, s.name), { force: true })));
+    const toDelete = stats.slice(MAX_CACHED_FILES).filter((s) => !keep.has(s.name));
+    await Promise.all(
+      toDelete.map((s) => fs.promises.rm(path.join(WALLPAPERS_DIR, s.name), { force: true })),
+    );
   } catch (error) {
     logger.error("wallpaper", "Cache prune failed", error);
   }

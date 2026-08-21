@@ -39,7 +39,7 @@ export function registerHandlers(): void {
     getSettingsWindow()?.close();
   });
 
-  // Wallpaper Cycle handlers (search, download, set wallpaper, rotation, settings)
+  // Infinite Wallpapers handlers (search, download, set wallpaper, rotation, settings)
   registerWallpaperHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");

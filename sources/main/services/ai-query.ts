@@ -36,7 +36,9 @@ export async function refineQuery(description: string): Promise<RefineResult> {
     return { query: cleaned || raw };
   } catch (error) {
     if (error instanceof GlazeAIError) {
-      logger.info("ai-query", "AI unavailable, falling back to raw description", { state: error.state });
+      logger.info("ai-query", "AI unavailable, falling back to raw description", {
+        state: error.state,
+      });
       return { query: raw, blocked: error.state };
     }
     logger.error("ai-query", "AI query refinement failed", error);

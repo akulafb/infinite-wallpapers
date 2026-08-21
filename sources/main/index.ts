@@ -8,7 +8,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { app, BrowserWindow, Menu, protocol, logger, initDevToolsButtonState } from "@glaze/core/backend";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  protocol,
+  logger,
+  initDevToolsButtonState,
+} from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
@@ -262,6 +269,7 @@ app.whenReady().then(async () => {
 
   // Load persisted settings, start the rotation scheduler, and add the menu-bar tray.
   await settingsStore.load();
+  await settingsStore.reconcileHistory();
   await rotationScheduler.start();
   createTray({
     openMainWindow: showMainWindow,

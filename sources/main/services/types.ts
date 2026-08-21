@@ -1,4 +1,4 @@
-// Shared types for the Wallpaper Cycle backend.
+// Shared types for the Infinite Wallpapers backend.
 
 export type Frequency = "hourly" | "daily" | "weekly" | "manual";
 

@@ -17,8 +17,40 @@ import {
 
 import { isPermissionError, wallpaperApi, wallpaperUrl } from "../lib/wallpaper-api";
 import type { Frequency } from "../lib/wallpaper-types";
-import { PRESETS, shuffleThemes, type Preset } from "./presets";
+import { PRESETS, presetsFromIds, shuffleThemes, type Preset } from "./presets";
 import { ThemeCard } from "../components/theme-card";
+
+const THEME_GRID_KEY = "infiniteWallpapers.themeGrid.v1";
+const THEME_GRID_SIZE = 12;
+
+// The shuffled grid is a renderer-local preference, so it lives in localStorage
+// rather than the backend config. Only ids are stored — a `Preset` carries an
+// `Icon` component reference that can't be serialised. Every access is guarded
+// because storage can be unavailable or throw, and that must never stop the
+// grid from rendering.
+function loadThemeGrid(): Preset[] {
+  try {
+    const raw = window.localStorage.getItem(THEME_GRID_KEY);
+    if (!raw) return PRESETS;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return PRESETS;
+    const ids = parsed.filter((entry): entry is string => typeof entry === "string");
+    if (ids.length === 0) return PRESETS;
+    // Stale ids are dropped and backfilled, so the grid stays full.
+    return presetsFromIds(ids, THEME_GRID_SIZE);
+  } catch {
+    // Corrupt JSON or blocked storage — fall back to the default grid.
+    return PRESETS;
+  }
+}
+
+function saveThemeGrid(presets: readonly Preset[]): void {
+  try {
+    window.localStorage.setItem(THEME_GRID_KEY, JSON.stringify(presets.map((preset) => preset.id)));
+  } catch {
+    // Persistence is best-effort; a failed write must not break shuffling.
+  }
+}
 
 function formatRemaining(ms: number): string {
   if (ms <= 0) return "any moment now";
@@ -69,11 +101,17 @@ export function HomeView() {
   const [description, setDescription] = useState("");
   const [permissionError, setPermissionError] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [visiblePresets, setVisiblePresets] = useState<Preset[]>(PRESETS);
+  // Lazy initialiser so the persisted grid is restored on the first render.
+  const [visiblePresets, setVisiblePresets] = useState<Preset[]>(loadThemeGrid);
   const [isShuffling, setIsShuffling] = useState(false);
 
   const shuffleGrid = () => {
-    setVisiblePresets(shuffleThemes(12, visiblePresets.map((p) => p.id)));
+    const next = shuffleThemes(
+      THEME_GRID_SIZE,
+      visiblePresets.map((p) => p.id),
+    );
+    setVisiblePresets(next);
+    saveThemeGrid(next);
     setIsShuffling(true);
     window.setTimeout(() => setIsShuffling(false), 400);
   };
@@ -89,18 +127,28 @@ export function HomeView() {
   // Refetch when the backend changes the wallpaper or rotation state (also fires
   // for background / tray-driven changes).
   useEffect(() => {
-    const off1 = wallpaperApi.onWallpaperChanged(() => qc.invalidateQueries({ queryKey: ["config"] }));
-    const off2 = wallpaperApi.onRotationChanged(() => qc.invalidateQueries({ queryKey: ["config"] }));
+    const off1 = wallpaperApi.onWallpaperChanged(() =>
+      qc.invalidateQueries({ queryKey: ["config"] }),
+    );
+    const off2 = wallpaperApi.onRotationChanged(() =>
+      qc.invalidateQueries({ queryKey: ["config"] }),
+    );
+    // Settings is a separate window with its own React tree, so changes made
+    // there arrive as a push rather than through this window's own mutations.
+    const off3 = wallpaperApi.onConfigChanged((next) => qc.setQueryData(["config"], next));
     return () => {
       off1();
       off2();
+      off3();
     };
   }, [qc]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["config"] });
   const onApplyError = (error: unknown) => {
     if (isPermissionError(error)) setPermissionError(true);
-    toast.error(error instanceof Error ? error.message : "Something went wrong applying the wallpaper.");
+    toast.error(
+      error instanceof Error ? error.message : "Something went wrong applying the wallpaper.",
+    );
   };
 
   const selectPreset = useMutation({
@@ -199,7 +247,7 @@ export function HomeView() {
   return (
     <ScrollArea
       className="h-full"
-      title={config?.theme.label ?? "Wallpaper Cycle"}
+      title={config?.theme.label ?? "Infinite Wallpapers"}
       subtitle={statusText}
       actions={
         <>
@@ -256,11 +304,25 @@ export function HomeView() {
                 </Text>
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button variant="muted" size="small" disabled={isApplying} onClick={() => skipWallpaper.mutate()}>
-                  {skipWallpaper.isPending ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
+                <Button
+                  variant="muted"
+                  size="small"
+                  disabled={isApplying}
+                  onClick={() => skipWallpaper.mutate()}
+                >
+                  {skipWallpaper.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Ban className="size-4" />
+                  )}
                   Skip
                 </Button>
-                <Button variant="accent" size="small" disabled={isApplying} onClick={() => nextWallpaper.mutate()}>
+                <Button
+                  variant="accent"
+                  size="small"
+                  disabled={isApplying}
+                  onClick={() => nextWallpaper.mutate()}
+                >
                   {nextWallpaper.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
@@ -276,15 +338,16 @@ export function HomeView() {
             <EmptyState
               placement="inline"
               title="No wallpaper yet"
-              description="Pick a theme below or describe what you want — Wallpaper Cycle will find a real one from the web and set it as your desktop."
+              description="Pick a theme below or describe what you want — Infinite Wallpapers will find a real one from the web and set it as your desktop."
             />
           </div>
         )}
 
         {permissionError && (
           <Callout color="orange">
-            Wallpaper Cycle needs Automation permission to change your desktop. Open System Settings › Privacy &
-            Security › Automation, enable “System Events” for this app, then try again.
+            Infinite Wallpapers needs Automation permission to change your desktop. Open System
+            Settings › Privacy & Security › Automation, enable “System Events” for this app, then
+            try again.
           </Callout>
         )}
 
@@ -297,7 +360,8 @@ export function HomeView() {
               </Button>
             }
           >
-            Add a Serper API key in Settings to search the entire web. Without it, wallpapers come from Wallhaven only.
+            Add a Serper API key in Settings to search the entire web. Without it, wallpapers come
+            from Wallhaven only.
           </Callout>
         )}
 
@@ -327,8 +391,10 @@ export function HomeView() {
         </Section>
 
         {/* Custom description */}
-        <Section title="Describe your own" description="Type anything — franchises, games, or a specific scene.">
-
+        <Section
+          title="Describe your own"
+          description="Type anything — franchises, games, or a specific scene."
+        >
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -347,7 +413,11 @@ export function HomeView() {
               disabled={!description.trim() || isApplying}
               onClick={() => applyCustom.mutate(description)}
             >
-              {applyCustom.isPending ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+              {applyCustom.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Wand2 className="size-4" />
+              )}
               Use description
             </Button>
           </div>
@@ -395,7 +465,11 @@ export function HomeView() {
                   title={record.themeLabel}
                   className="shrink-0 overflow-hidden rounded-control border border-field transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
-                  <img src={wallpaperUrl(record.file)} alt={record.themeLabel} className="h-16 w-28 object-cover" />
+                  <img
+                    src={wallpaperUrl(record.file)}
+                    alt={record.themeLabel}
+                    className="h-16 w-28 object-cover"
+                  />
                 </button>
               ))}
             </div>

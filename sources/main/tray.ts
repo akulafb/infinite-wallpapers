@@ -1,4 +1,4 @@
-// Menu-bar (tray) presence for Wallpaper Cycle. Lets the app keep rotating in
+// Menu-bar (tray) presence for Infinite Wallpapers. Lets the app keep rotating in
 // the background with quick controls, even when the main window is closed.
 
 import { app, Tray, Menu, logger } from "@glaze/core/backend";
@@ -22,7 +22,9 @@ let callbacks: TrayCallbacks = { openMainWindow: () => {}, openSettings: () => {
 function buildMenu(): Menu {
   const cfg = settingsStore.get();
   const freqLabel =
-    cfg.frequency === "manual" ? "Manual only" : cfg.frequency[0].toUpperCase() + cfg.frequency.slice(1);
+    cfg.frequency === "manual"
+      ? "Manual only"
+      : cfg.frequency[0].toUpperCase() + cfg.frequency.slice(1);
 
   return Menu.buildFromTemplate([
     { label: `Theme: ${cfg.theme.label}`, enabled: false },
@@ -58,10 +60,10 @@ function buildMenu(): Menu {
           },
         },
     { type: "separator" },
-    { label: "Open Wallpaper Cycle", click: () => callbacks.openMainWindow() },
+    { label: "Open Infinite Wallpapers", click: () => callbacks.openMainWindow() },
     { label: "Settings…", click: () => void callbacks.openSettings() },
     { type: "separator" },
-    { label: "Quit Wallpaper Cycle", click: () => app.quit() },
+    { label: "Quit Infinite Wallpapers", click: () => app.quit() },
   ]);
 }
 
@@ -70,7 +72,7 @@ export function createTray(cbs: TrayCallbacks): void {
   if (tray && !tray.isDestroyed()) return;
   // SF Symbol rendered as a template glyph so macOS tints it for the menu bar.
   tray = new Tray("photo.on.rectangle.angled", TRAY_GUID);
-  tray.setToolTip("Wallpaper Cycle");
+  tray.setToolTip("Infinite Wallpapers");
   tray.setContextMenu(buildMenu());
   app.on("before-quit", () => {
     tray?.destroy();

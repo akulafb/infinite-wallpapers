@@ -41,7 +41,7 @@ export async function setWallpaper(filePath: string): Promise<void> {
     const stderr = String((error as { stderr?: string }).stderr ?? (error as Error).message ?? "");
     if (/not authorized|-1743|1743|permission/i.test(stderr)) {
       throw new WallpaperPermissionError(
-        "Wallpaper Cycle needs Automation permission to control System Events. " +
+        "Infinite Wallpapers needs Automation permission to control System Events. " +
           "Open System Settings › Privacy & Security › Automation and enable it for this app.",
       );
     }

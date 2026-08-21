@@ -13,7 +13,9 @@ import type { Candidate, WallpaperRecord } from "./types.js";
 
 export class NoImagesError extends Error {
   constructor() {
-    super("No suitable wallpapers were found for this theme. Try a different theme or turn on mature content.");
+    super(
+      "No suitable wallpapers were found for this theme. Try a different theme or turn on mature content.",
+    );
     this.name = "NoImagesError";
   }
 }
@@ -56,7 +58,9 @@ export async function applyNext(reason: string): Promise<WallpaperRecord> {
   if (candidates.length === 0) throw new NoImagesError();
 
   const recent = new Set(
-    [cfg.current?.imageUrl, ...cfg.history.slice(0, 10).map((h) => h.imageUrl)].filter(Boolean) as string[],
+    [cfg.current?.imageUrl, ...cfg.history.slice(0, 10).map((h) => h.imageUrl)].filter(
+      Boolean,
+    ) as string[],
   );
   const ordered = pickFresh(candidates, recent);
 
@@ -76,9 +80,12 @@ export async function applyNext(reason: string): Promise<WallpaperRecord> {
         themeLabel: cfg.theme.label,
         appliedAt: Date.now(),
       };
-      const history = [record, ...cfg.history.filter((h) => h.imageUrl !== record.imageUrl)].slice(0, 30);
+      const history = [record, ...cfg.history.filter((h) => h.imageUrl !== record.imageUrl)].slice(
+        0,
+        30,
+      );
       await settingsStore.update({ current: record, history });
-      void pruneCache(history.map((h) => h.file));
+      void pruneCache(); // protects current + history itself
       logger.info("wallpaper", "Applied new wallpaper", { reason, provider: record.provider });
       ipcMain.broadcast("wallpaper:changed", { record });
       return record;

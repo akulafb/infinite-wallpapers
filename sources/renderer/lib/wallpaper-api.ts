@@ -1,4 +1,4 @@
-// Typed wrappers over the Glaze IPC bridge for Wallpaper Cycle.
+// Typed wrappers over the Glaze IPC bridge for Infinite Wallpapers.
 
 import type {
   AppConfig,
@@ -21,8 +21,9 @@ export const wallpaperApi = {
   setPreset: (theme: ThemeConfig) => ipc().invoke<AppConfig>("theme:setPreset", theme),
   setCustom: (description: string) =>
     ipc().invoke<{ config: AppConfig; aiBlocked?: string }>("theme:setCustom", description),
-  updateSettings: (patch: Partial<Pick<AppConfig, "frequency" | "matureContent" | "aiAssist" | "minWidth">>) =>
-    ipc().invoke<AppConfig>("settings:update", patch),
+  updateSettings: (
+    patch: Partial<Pick<AppConfig, "frequency" | "matureContent" | "aiAssist" | "minWidth">>,
+  ) => ipc().invoke<AppConfig>("settings:update", patch),
   getThemeThumbnail: (presetId: string, query: string, category: ThemeCategory) =>
     ipc().invoke<string | null>("theme:thumbnail", { presetId, query, category }),
   setSerperKey: (key: string) => ipc().invoke<boolean>("serper:setKey", key),
@@ -34,6 +35,10 @@ export const wallpaperApi = {
   resume: () => ipc().invoke<RotationState>("rotation:resume"),
   getRotationState: () => ipc().invoke<RotationState>("rotation:getState"),
   openSettings: () => ipc().invoke<void>("window:openSettings"),
+  // The preload bridge types notification params as `unknown`, so narrow here
+  // rather than at every call site.
+  onConfigChanged: (cb: (next: ConfigResult) => void) =>
+    ipc().onNotification("config:changed", (params) => cb(params as ConfigResult)),
   onWallpaperChanged: (cb: () => void) => ipc().onNotification("wallpaper:changed", cb),
   onRotationChanged: (cb: () => void) => ipc().onNotification("rotation:changed", cb),
 };

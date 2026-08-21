@@ -1,4 +1,4 @@
-// IPC handlers for Wallpaper Cycle. Thin boundary: validate inputs, delegate to
+// IPC handlers for Infinite Wallpapers. Thin boundary: validate inputs, delegate to
 // services, return contract-shaped results.
 
 import { ipcMain, logger } from "@glaze/core/backend";
@@ -29,13 +29,30 @@ function parseTheme(value: unknown): ThemeConfig {
   const id = typeof r.id === "string" ? r.id : "";
   const label = typeof r.label === "string" ? r.label : "";
   const query = typeof r.query === "string" ? r.query.trim() : "";
-  const category = CATEGORIES.includes(r.category as ThemeCategory) ? (r.category as ThemeCategory) : "web";
+  const category = CATEGORIES.includes(r.category as ThemeCategory)
+    ? (r.category as ThemeCategory)
+    : "web";
   const kind = r.kind === "custom" ? "custom" : "preset";
   if (!id || !label || !query) throw new Error("Theme requires id, label and query");
   return { id, label, query, kind, category };
 }
 
-async function state(): Promise<{ paused: boolean; frequency: Frequency; nextRunAt: number | null }> {
+// The main and Settings windows are separate BrowserWindows with separate React
+// trees, so saving in one does not refresh the other. Push the whole config
+// result after a mutation the other window displays. Theme changes are excluded:
+// only the main window renders the theme, and it updates its own cache.
+async function broadcastConfig(): Promise<void> {
+  ipcMain.broadcast("config:changed", {
+    config: settingsStore.get(),
+    hasSerperKey: await settingsStore.hasSerperKey(),
+  });
+}
+
+async function state(): Promise<{
+  paused: boolean;
+  frequency: Frequency;
+  nextRunAt: number | null;
+}> {
   const cfg = settingsStore.get();
   return { paused: cfg.paused, frequency: cfg.frequency, nextRunAt: cfg.nextRunAt };
 }
@@ -79,7 +96,12 @@ export function registerWallpaperHandlers(): void {
   ipcMain.handle("settings:update", async (_e, patch: unknown): Promise<AppConfig> => {
     const r = asRecord(patch);
     const next: Partial<AppConfig> = {};
-    if (r.frequency === "hourly" || r.frequency === "daily" || r.frequency === "weekly" || r.frequency === "manual") {
+    if (
+      r.frequency === "hourly" ||
+      r.frequency === "daily" ||
+      r.frequency === "weekly" ||
+      r.frequency === "manual"
+    ) {
       next.frequency = r.frequency;
     }
     if (typeof r.matureContent === "boolean") next.matureContent = r.matureContent;
@@ -88,12 +110,14 @@ export function registerWallpaperHandlers(): void {
     const config = await settingsStore.update(next);
     if (next.frequency !== undefined) await rotationScheduler.reschedule();
     refreshTray();
+    await broadcastConfig();
     return config;
   });
 
   ipcMain.handle("serper:setKey", async (_e, key: unknown): Promise<boolean> => {
     if (typeof key !== "string") throw new Error("Invalid key");
     await settingsStore.setSerperKey(key);
+    await broadcastConfig();
     return settingsStore.hasSerperKey();
   });
 
@@ -103,7 +127,9 @@ export function registerWallpaperHandlers(): void {
     const r = asRecord(args);
     const presetId = typeof r.presetId === "string" ? r.presetId : "";
     const query = typeof r.query === "string" ? r.query : "";
-    const category = CATEGORIES.includes(r.category as ThemeCategory) ? (r.category as ThemeCategory) : "general";
+    const category = CATEGORIES.includes(r.category as ThemeCategory)
+      ? (r.category as ThemeCategory)
+      : "general";
     if (!presetId || !query) return null;
     return themeThumbnails.get(presetId, query, category);
   });
@@ -147,5 +173,5 @@ export function registerWallpaperHandlers(): void {
 
   ipcMain.handle("permissions:checkAutomation", async () => checkAutomationPermission());
 
-  logger.info("handlers", "✓ Wallpaper Cycle handlers registered");
+  logger.info("handlers", "✓ Infinite Wallpapers handlers registered");
 }

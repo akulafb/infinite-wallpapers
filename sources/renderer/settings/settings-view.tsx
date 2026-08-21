@@ -57,6 +57,13 @@ export function SettingsView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Frequency and mature content are also editable in the main window, so mirror
+  // pushes from the backend instead of rendering a stale copy.
+  useEffect(
+    () => wallpaperApi.onConfigChanged((next) => qc.setQueryData(["settings-config"], next)),
+    [qc],
+  );
+
   useEffect(() => {
     window.glazeAPI.nativeTheme
       .getInfo()
@@ -84,7 +91,8 @@ export function SettingsView() {
   });
 
   const updateSetting = useMutation({
-    mutationFn: (patch: Parameters<typeof wallpaperApi.updateSettings>[0]) => wallpaperApi.updateSettings(patch),
+    mutationFn: (patch: Parameters<typeof wallpaperApi.updateSettings>[0]) =>
+      wallpaperApi.updateSettings(patch),
     onSuccess: invalidate,
   });
 
@@ -126,19 +134,28 @@ export function SettingsView() {
           </FieldGroup>
         </FieldSet>
 
-        <FieldSet title="Web search" description="A free Serper.dev API key unlocks whole-web image search.">
+        <FieldSet
+          title="Web search"
+          description="A free Serper.dev API key unlocks whole-web image search."
+        >
           <FieldGroup>
             <Field
               orientation="vertical"
               label="Serper API key"
-              description={data?.hasSerperKey ? "A key is saved and in use." : "Get a free key at serper.dev, then paste it here."}
+              description={
+                data?.hasSerperKey
+                  ? "A key is saved and in use."
+                  : "Get a free key at serper.dev, then paste it here."
+              }
             >
               <div className="flex gap-2">
                 <Input
                   type="password"
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder={data?.hasSerperKey ? "•••••••• (saved)" : "Paste your Serper API key"}
+                  placeholder={
+                    data?.hasSerperKey ? "•••••••• (saved)" : "Paste your Serper API key"
+                  }
                   className="flex-1"
                   autoComplete="off"
                 />
@@ -222,8 +239,8 @@ export function SettingsView() {
         </FieldSet>
 
         <Text variant="mini" color="tertiary">
-          Wallpaper Cycle finds real photos from the web and never generates images. Sources are filtered to avoid
-          watermarked stock previews, but results come from the open web.
+          Infinite Wallpapers finds real photos from the web and never generates images. Sources are
+          filtered to avoid watermarked stock previews, but results come from the open web.
         </Text>
       </div>
     </ScrollArea>

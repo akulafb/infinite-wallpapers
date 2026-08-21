@@ -1,4 +1,4 @@
-// Durable settings + encrypted secret storage for Wallpaper Cycle.
+// Durable settings + encrypted secret storage for Infinite Wallpapers.
 //
 // Config lives as JSON under app.getPath("userData"); the Serper API key is
 // stored separately, encrypted with safeStorage. Writes are atomic (temp file +
@@ -60,7 +60,9 @@ function normalize(raw: unknown): AppConfig {
 
   const freq = r.frequency;
   const frequency =
-    freq === "hourly" || freq === "daily" || freq === "weekly" || freq === "manual" ? freq : base.frequency;
+    freq === "hourly" || freq === "daily" || freq === "weekly" || freq === "manual"
+      ? freq
+      : base.frequency;
 
   return {
     theme,
@@ -70,7 +72,9 @@ function normalize(raw: unknown): AppConfig {
     minWidth: typeof r.minWidth === "number" && r.minWidth > 0 ? r.minWidth : base.minWidth,
     paused: typeof r.paused === "boolean" ? r.paused : base.paused,
     current: (r.current as AppConfig["current"]) ?? null,
-    history: Array.isArray(r.history) ? (r.history as AppConfig["history"]).slice(0, MAX_HISTORY) : [],
+    history: Array.isArray(r.history)
+      ? (r.history as AppConfig["history"]).slice(0, MAX_HISTORY)
+      : [],
     blocked: Array.isArray(r.blocked) ? (r.blocked as string[]).slice(-MAX_BLOCKED) : [],
     nextRunAt: typeof r.nextRunAt === "number" ? r.nextRunAt : null,
   };
@@ -120,6 +124,34 @@ class SettingsStore {
       await fs.promises.rename(tmp, CONFIG_PATH);
     });
     return this.saveChain;
+  }
+
+  // Drop config references to cached images that are no longer on disk. An
+  // earlier build pruned the cache without protecting files still referenced by
+  // history, so existing installs carry history entries whose image is gone —
+  // which renders as a broken tile in the Recent strip. Runs once at startup.
+  async reconcileHistory(): Promise<void> {
+    const cfg = await this.load();
+    const onDisk = async (file: string): Promise<boolean> => {
+      try {
+        await fs.promises.access(path.join(WALLPAPERS_DIR, file));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const present = await Promise.all(cfg.history.map((record) => onDisk(record.file)));
+    const history = cfg.history.filter((_, index) => present[index]);
+    const current = cfg.current;
+    const currentGone = current !== null && !(await onDisk(current.file));
+    if (history.length === cfg.history.length && !currentGone) return;
+
+    logger.info("settings", "Dropped config references to missing wallpaper files", {
+      removedFromHistory: cfg.history.length - history.length,
+      clearedCurrent: currentGone,
+    });
+    await this.update({ history, current: currentGone ? null : current });
   }
 
   // ── Serper API key (encrypted) ─────────────────────────────────────
