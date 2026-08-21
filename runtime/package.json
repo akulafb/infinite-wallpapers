@@ -1,0 +1,33 @@
+{
+  "id": "aqiba2xv",
+  "name": "infinite-wallpapers",
+  "productName": "Infinite Wallpapers",
+  "description": "Auto-refresh desktop wallpapers by theme",
+  "version": "1.0.0",
+  "type": "module",
+  "glaze": {
+    "capabilities": {
+      "ai": {
+        "grades": [
+          "fast"
+        ],
+        "purpose": "Turns your natural-language wallpaper descriptions into effective web image-search queries.",
+        "mode": "optional"
+      }
+    },
+    "sdkVersion": "0.14.0.0",
+    "createdAt": "2026-07-29T17:57:53.365Z",
+    "lastMigration": "tray-retina-icons",
+    "host": {
+      "minVersion": "0.14.0.0"
+    },
+    "updatedAt": 1785352505270,
+    "appId": "wallpaper-cycle-local-aqiba2xv",
+    "variant": "local"
+  },
+  "appConfig": {
+    "macOS": {
+      "activationPolicy": "accessory"
+    }
+  }
+}

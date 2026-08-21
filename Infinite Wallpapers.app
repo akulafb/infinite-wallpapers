@@ -1,0 +1,1 @@
+/Applications/Glaze/Infinite Wallpapers.app
