@@ -20,7 +20,6 @@ tmp/*
 # Glaze-managed external-agent resources
 # skills/ are symlinks into ~/Library/Application Support (machine-local, not portable)
 .claude/rules/
-.claude/skills/
 .claude/.cc-writes/
 .agents/skills
 .cursor/rules/

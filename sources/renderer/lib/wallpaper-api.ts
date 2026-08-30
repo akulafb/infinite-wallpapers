@@ -43,6 +43,15 @@ export const wallpaperApi = {
   onRotationChanged: (cb: () => void) => ipc().onNotification("rotation:changed", cb),
 };
 
+export function cleanErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return "Something went wrong applying the wallpaper.";
+  const stripped = error.message
+    .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/i, "")
+    .trim();
+  return stripped || "Something went wrong applying the wallpaper.";
+}
+
 export function isPermissionError(error: unknown): boolean {
-  return error instanceof Error && /automation permission/i.test(error.message);
+  if (!(error instanceof Error)) return false;
+  return /automation permission|-1743|1743|System Events/i.test(error.message);
 }

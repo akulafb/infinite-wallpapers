@@ -181,35 +181,64 @@ function wallhavenCategories(category: ThemeCategory): string {
   }
 }
 
+function cleanWallhavenQuery(rawQuery: string): string {
+  const stripped = rawQuery
+    .replace(
+      /\b(4k|8k|hd|wallpaper|wallpapers|background|backgrounds|high resolution|hires|desktop)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped || rawQuery.trim();
+}
+
 async function searchWallhaven(opts: SearchOptions): Promise<Candidate[]> {
   const aspect = displayAspect();
-  const params = new URLSearchParams({
-    q: opts.query,
-    categories: wallhavenCategories(opts.category),
-    purity: opts.matureContent ? "110" : "100", // sfw(+sketchy); nsfw needs an API key
-    sorting: "relevance",
-    atleast: wallhavenAtleast(opts.minWidth, aspect),
-    ratios: wallhavenRatios(aspect),
-    ai_art_filter: "1", // exclude AI-generated art where honored
-  });
-  const res = await fetch(`https://wallhaven.cc/api/v1/search?${params.toString()}`, {
-    headers: { "User-Agent": "InfiniteWallpapers/1.0" },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`Wallhaven error: ${res.status} ${res.statusText}`);
-  const data = (await res.json()) as { data?: WallhavenItem[] };
-  const items = data.data ?? [];
-  return items
-    .filter((it): it is Required<Pick<WallhavenItem, "path">> & WallhavenItem => Boolean(it.path))
-    .map((it) => ({
-      imageUrl: it.path!,
-      thumbnailUrl: it.thumbs?.large ?? it.thumbs?.small ?? it.path!,
-      pageUrl: it.url ?? it.path!,
-      provider: "wallhaven",
-      width: it.dimension_x ?? 0,
-      height: it.dimension_y ?? 0,
-      title: "",
-    }));
+  const executeSearch = async (query: string): Promise<Candidate[]> => {
+    const params = new URLSearchParams({
+      q: query,
+      categories: wallhavenCategories(opts.category),
+      purity: opts.matureContent ? "110" : "100", // sfw(+sketchy); nsfw needs an API key
+      sorting: "relevance",
+      atleast: wallhavenAtleast(opts.minWidth, aspect),
+      ratios: wallhavenRatios(aspect),
+      ai_art_filter: "1", // exclude AI-generated art where honored
+    });
+    const res = await fetch(`https://wallhaven.cc/api/v1/search?${params.toString()}`, {
+      headers: { "User-Agent": "InfiniteWallpapers/1.0" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`Wallhaven error: ${res.status} ${res.statusText}`);
+    const data = (await res.json()) as { data?: WallhavenItem[] };
+    const items = data.data ?? [];
+    return items
+      .filter((it): it is Required<Pick<WallhavenItem, "path">> & WallhavenItem => Boolean(it.path))
+      .map((it) => ({
+        imageUrl: it.path!,
+        thumbnailUrl: it.thumbs?.large ?? it.thumbs?.small ?? it.path!,
+        pageUrl: it.url ?? it.path!,
+        provider: "wallhaven",
+        width: it.dimension_x ?? 0,
+        height: it.dimension_y ?? 0,
+        title: "",
+      }));
+  };
+
+  const cleaned = cleanWallhavenQuery(opts.query);
+  const attempts = [cleaned];
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length > 2) attempts.push(words.slice(0, 2).join(" "));
+  if (words.length > 1) attempts.push(words[0]);
+
+  for (const q of attempts) {
+    try {
+      const candidates = await executeSearch(q);
+      if (candidates.length > 0) return candidates;
+    } catch (err) {
+      logger.warn("search", `Wallhaven attempt failed for "${q}"`, err);
+    }
+  }
+  return [];
 }
 
 // Interleave two arrays so results from both providers are represented near the top.

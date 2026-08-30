@@ -20,16 +20,20 @@ export class NoImagesError extends Error {
   }
 }
 
-function pickFresh(candidates: Candidate[], recent: Set<string>): Candidate[] {
+function orderCandidates(candidates: Candidate[], recent: Set<string>): Candidate[] {
+  const shuffle = (list: Candidate[]) => {
+    const copy = [...list];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
   const fresh = candidates.filter((c) => !recent.has(c.imageUrl));
-  const pool = fresh.length > 0 ? fresh : candidates;
-  // Sample from the most relevant slice for variety without drifting off-theme.
-  const top = pool.slice(0, Math.min(20, pool.length));
-  for (let i = top.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [top[i], top[j]] = [top[j], top[i]];
-  }
-  return top;
+  const seen = candidates.filter((c) => recent.has(c.imageUrl));
+
+  return [...shuffle(fresh), ...shuffle(seen)];
 }
 
 async function search(): Promise<Candidate[]> {
@@ -62,10 +66,10 @@ export async function applyNext(reason: string): Promise<WallpaperRecord> {
       Boolean,
     ) as string[],
   );
-  const ordered = pickFresh(candidates, recent);
+  const ordered = orderCandidates(candidates, recent);
 
   let lastError: unknown = null;
-  for (const candidate of ordered.slice(0, 6)) {
+  for (const candidate of ordered.slice(0, 12)) {
     try {
       const downloaded = await downloadImage(candidate.imageUrl);
       await setWallpaper(downloaded.absPath);
@@ -92,10 +96,16 @@ export async function applyNext(reason: string): Promise<WallpaperRecord> {
     } catch (error) {
       if (error instanceof WallpaperPermissionError) throw error; // no point retrying
       lastError = error;
-      logger.error("wallpaper", "Candidate failed, trying next", error);
+      logger.warn("wallpaper", "Candidate failed, trying next", {
+        imageUrl: candidate.imageUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
-  throw lastError instanceof Error ? lastError : new NoImagesError();
+  if (lastError instanceof WallpaperPermissionError) throw lastError;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not download a suitable wallpaper for this theme. Please try again.");
 }
 
 // Re-apply a previously downloaded wallpaper from history.

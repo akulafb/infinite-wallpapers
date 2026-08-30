@@ -15,7 +15,12 @@ import {
   toast,
 } from "@glaze/core/components";
 
-import { isPermissionError, wallpaperApi, wallpaperUrl } from "../lib/wallpaper-api";
+import {
+  cleanErrorMessage,
+  isPermissionError,
+  wallpaperApi,
+  wallpaperUrl,
+} from "../lib/wallpaper-api";
 import type { Frequency } from "../lib/wallpaper-types";
 import { PRESETS, presetsFromIds, shuffleThemes, type Preset } from "./presets";
 import { ThemeCard } from "../components/theme-card";
@@ -146,9 +151,7 @@ export function HomeView() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["config"] });
   const onApplyError = (error: unknown) => {
     if (isPermissionError(error)) setPermissionError(true);
-    toast.error(
-      error instanceof Error ? error.message : "Something went wrong applying the wallpaper.",
-    );
+    toast.error(cleanErrorMessage(error));
   };
 
   const selectPreset = useMutation({
