@@ -13,3 +13,9 @@ runtime/build/
 
 # Local symlink to the installed app (machine-specific)
 /Infinite Wallpapers.app
+
+# Local secrets (never commit)
+.env
+
+# Glaze-made skill links (machine-local). Kept here because Glaze rewrites sources/.gitignore.
+sources/.claude/skills/
