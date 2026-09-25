@@ -4,7 +4,7 @@ A macOS menu-bar app that automatically rotates your desktop wallpaper with high
 
 ## Requirements
 
-- **macOS 12 or newer**
+- **macOS 12 or newer** on an **Apple Silicon** Mac (M1 or later)
 - [**Node.js 22+**](https://nodejs.org) (only to build from source)
 
 ## Step-by-Step Setup
@@ -33,7 +33,7 @@ The app lives in your menu bar (the photo icon at the top of your screen). Closi
 npm run dist
 ```
 
-This creates `release/Infinite Wallpapers-1.0.0-universal.dmg`. Open it and drag the app into **Applications**.
+This creates `release/Infinite Wallpapers-1.0.0-arm64.dmg`. Open it and drag the app into **Applications**.
 
 The app is not signed with an Apple developer certificate, so the first time you open it macOS will block it. Right-click the app in **Applications**, choose **Open**, then click **Open** again. (On newer macOS versions: **System Settings** › **Privacy & Security** › **Open Anyway**.)
 
