@@ -20,13 +20,13 @@
         "mode": "optional"
       }
     },
-    "sdkVersion": "0.14.1.0",
+    "sdkVersion": "0.14.2.0",
     "createdAt": "2026-07-29T17:57:53.365Z",
     "lastMigration": "tray-retina-icons",
     "host": {
-      "minVersion": "0.14.1.0"
+      "minVersion": "0.14.2.0"
     },
-    "updatedAt": 1787302408583,
+    "updatedAt": 1788085447068,
     "appId": "wallpaper-cycle-local-aqiba2xv",
     "variant": "local"
   }

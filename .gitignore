@@ -10,3 +10,6 @@ sources/node_modules/
 # runtime/package.json stay tracked: the icon is a binary that sources/
 # deliberately ignores, so this is its only copy.
 runtime/build/
+
+# Local symlink to the installed app (machine-specific)
+/Infinite Wallpapers.app
