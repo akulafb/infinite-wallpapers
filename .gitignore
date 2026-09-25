@@ -10,3 +10,6 @@ release/
 
 # Logs
 *.log
+
+# Local secrets (never commit)
+.env
