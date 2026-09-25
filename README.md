@@ -7,6 +7,8 @@ A macOS menu-bar app that automatically rotates your desktop wallpaper with high
 - **macOS 14 or newer**
 - [**Glaze**](https://glaze.dev) installed on your Mac
 
+> The app is built on Glaze and needs it to build and run. Glaze also creates the AI-agent skill links in `sources/.claude/skills/` on your machine, so they are not included in this repo.
+
 ## Step-by-Step Setup
 
 ### 1. Navigate to your Glaze folder and clone the project there
