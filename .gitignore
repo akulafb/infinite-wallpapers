@@ -1,15 +1,12 @@
 # OS files
 .DS_Store
 
-# Dependencies (inside sources/)
-sources/node_modules/
+# Dependencies
+node_modules/
 
-# Build output — regenerate with `npm run verify` from sources/.
-# Not versioned: every build emits new content-hashed asset filenames, so
-# tracking it churns the repo on each verify. runtime/app-icon.icns and
-# runtime/package.json stay tracked: the icon is a binary that sources/
-# deliberately ignores, so this is its only copy.
-runtime/build/
+# Build output (npm run build / npm run dist)
+dist/
+release/
 
-# Local symlink to the installed app (machine-specific)
-/Infinite Wallpapers.app
+# Logs
+*.log
