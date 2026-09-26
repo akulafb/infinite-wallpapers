@@ -13,3 +13,7 @@ release/
 
 # Local secrets (never commit)
 .env
+
+# Agent skills
+.claude/skills/*
+.agents/skills/*
