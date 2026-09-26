@@ -64,7 +64,8 @@
           ]
         }
       ],
-      "identity": null,
+      "identity": "-",
+      "hardenedRuntime": false,
       "extendInfo": {
         "LSUIElement": true,
         "NSAppleEventsUsageDescription": "Infinite Wallpapers uses System Events to change your desktop wallpaper."

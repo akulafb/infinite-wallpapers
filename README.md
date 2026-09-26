@@ -5,37 +5,27 @@ A macOS menu-bar app that automatically rotates your desktop wallpaper with high
 ## Requirements
 
 - **macOS 12 or newer** on an **Apple Silicon** Mac (M1 or later)
-- [**Node.js 22+**](https://nodejs.org) (only to build from source)
 
-## Step-by-Step Setup
+## Install
 
-### 1. Get the code
+### 1. Download
 
-Open the **Terminal** app on your Mac and run:
+Go to the [**latest release**](https://github.com/akulafb/infinite-wallpapers/releases/latest) and download the `.dmg` file.
 
-```bash
-git clone https://github.com/akulafb/infinite-wallpapers.git
-cd infinite-wallpapers
-npm install
-```
+### 2. Install
 
-### 2. Run the app
+Open the `.dmg` file and drag **Infinite Wallpapers** into **Applications**.
 
-```bash
-npm start
-```
+### 3. Open it the first time
+
+The app is not signed with a paid Apple developer certificate, so macOS blocks it the first time. You only need to do this once:
+
+1. Open **Infinite Wallpapers** from **Applications**. macOS shows a warning. Click **Done** (or **OK**).
+2. Open **System Settings** › **Privacy & Security**.
+3. Scroll down. Next to the message about **Infinite Wallpapers**, click **Open Anyway**.
+4. Confirm with your password or Touch ID, then click **Open Anyway** again.
 
 The app lives in your menu bar (the photo icon at the top of your screen). Closing the window keeps it running there, so your wallpaper keeps changing.
-
-### 3. (Optional) Install it like a normal Mac app
-
-```bash
-npm run dist
-```
-
-This creates `release/Infinite Wallpapers-1.0.0-arm64.dmg`. Open it and drag the app into **Applications**.
-
-The app is not signed with an Apple developer certificate, so the first time you open it macOS will block it. Right-click the app in **Applications**, choose **Open**, then click **Open** again. (On newer macOS versions: **System Settings** › **Privacy & Security** › **Open Anyway**.)
 
 ### 4. Grant wallpaper permission
 
@@ -56,12 +46,37 @@ To unlock whole-web Google Images search:
 
 ## For developers
 
+### Build from source
+
+You need [**Node.js 22+**](https://nodejs.org). Open the **Terminal** app and run:
+
+```bash
+git clone https://github.com/akulafb/infinite-wallpapers.git
+cd infinite-wallpapers
+npm install
+npm start
+```
+
+### Commands
+
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Runs the app with live reload for the UI. The app restarts when backend code changes. |
 | `npm start` | Builds and runs the app. |
 | `npm run type-check` | Checks TypeScript types. |
 | `npm run dist` | Builds the `.dmg` installer into `release/`. |
+
+### Publish a new release
+
+1. Change `version` in `package.json` (for example `1.0.1`) and commit.
+2. Tag and push:
+
+   ```bash
+   git tag v1.0.1
+   git push origin main v1.0.1
+   ```
+
+GitHub Actions builds the `.dmg` and adds it to a new release (`.github/workflows/release.yml`).
 
 Project layout:
 
