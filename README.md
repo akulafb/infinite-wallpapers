@@ -86,3 +86,14 @@ Project layout:
 - `scripts/`: build and dev scripts (Vite + esbuild)
 
 🌄 *HAPPY WALLPAPERING* 🌄
+
+## Android app (in progress)
+
+A native Android version lives in [`android/`](android/). It uses Kotlin, Jetpack Compose and WorkManager, so the wallpaper keeps changing in the background.
+
+You need JDK 17 and the Android SDK. With a phone or emulator connected, run:
+
+```bash
+cd android
+./gradlew installDebug
+```
