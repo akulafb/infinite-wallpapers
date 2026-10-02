@@ -256,11 +256,6 @@ private fun CurrentWallpaper(
             Column(Modifier.weight(1f).height(282.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(current.themeLabel, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Source: ${current.provider}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     if (current.width > 0) {
                         Text(
                             "${current.width}×${current.height}",
