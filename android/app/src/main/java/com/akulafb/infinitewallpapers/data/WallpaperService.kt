@@ -218,8 +218,8 @@ class WallpaperService(
         var sample = 1
         while (scale * sample * 2 <= 1.0) sample *= 2
 
+        // Throws IOException if the file can't be decoded.
         val decoder = BitmapRegionDecoder.newInstance(file.path, false)
-            ?: throw IllegalStateException("Could not decode image")
         val region = try {
             decoder.decodeRegion(rect, BitmapFactory.Options().apply { inSampleSize = sample })
         } finally {
