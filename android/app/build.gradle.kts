@@ -2,9 +2,9 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.github.triplet.play")
 }
 
 android {
@@ -23,6 +23,7 @@ android {
     // Without it, bundleRelease still builds, but the output is unsigned.
     val keystoreProps = rootProject.file("keystore.properties").takeIf { it.exists() }
         ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    playCredentials = keystoreProps?.getProperty("playServiceAccount")
 
     signingConfigs {
         if (keystoreProps != null) {
@@ -54,6 +55,18 @@ android {
     }
 }
 
+// `./gradlew publishBundle` uploads a signed release to the closed test
+// track and sends it for review. The service account key path comes from
+// playServiceAccount in android/keystore.properties (git-ignored).
+var playCredentials: String? = null
+
+play {
+    playCredentials?.let { serviceAccountCredentials.set(file(it)) }
+    track.set("alpha")
+    defaultToAppBundles.set(true)
+    releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
+}
+
 kotlin {
     jvmToolchain(17)
 }
@@ -71,7 +84,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
-    implementation("androidx.work:work-runtime-ktx:2.10.2")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
