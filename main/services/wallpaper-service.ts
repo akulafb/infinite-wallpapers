@@ -7,10 +7,12 @@ import { broadcast } from "../broadcast.js";
 import { logger } from "../logger.js";
 
 import { searchImages } from "./image-search.js";
-import { downloadImage, pruneCache } from "./wallpaper-download.js";
+import { downloadImage, pruneCache, setStagedPreviewFile } from "./wallpaper-download.js";
 import { setWallpaper, WallpaperPermissionError } from "./wallpaper-setter.js";
 import { settingsStore, WALLPAPERS_DIR } from "./settings-store.js";
-import type { Candidate, WallpaperRecord } from "./types.js";
+import type { Candidate, StagedPreview, ThemeConfig, WallpaperRecord } from "./types.js";
+
+export { setStagedPreviewFile };
 
 export class NoImagesError extends Error {
   constructor() {
@@ -37,11 +39,11 @@ function orderCandidates(candidates: Candidate[], recent: Set<string>): Candidat
   return [...shuffle(fresh), ...shuffle(seen)];
 }
 
-async function search(): Promise<Candidate[]> {
+async function searchForTheme(theme: ThemeConfig): Promise<Candidate[]> {
   const cfg = settingsStore.get();
   const candidates = await searchImages({
-    query: cfg.theme.query,
-    category: cfg.theme.category,
+    query: theme.query,
+    category: theme.category,
     matureContent: cfg.matureContent,
     minWidth: cfg.minWidth,
     blocked: cfg.blocked,
@@ -49,10 +51,101 @@ async function search(): Promise<Candidate[]> {
   return candidates;
 }
 
+async function search(): Promise<Candidate[]> {
+  return searchForTheme(settingsStore.get().theme);
+}
+
 // Lightweight candidate list for the UI preview strip (no downloads).
 export async function previewCandidates(): Promise<Candidate[]> {
   const candidates = await search();
   return candidates.slice(0, 12);
+}
+
+// Fetch and download a real candidate for preview without setting desktop wallpaper.
+export async function stageThemeWallpaper(
+  theme: ThemeConfig,
+  excludeUrls: string[] = [],
+): Promise<StagedPreview> {
+  const cfg = settingsStore.get();
+  const candidates = await searchForTheme(theme);
+  if (candidates.length === 0) throw new NoImagesError();
+
+  const recent = new Set(
+    [
+      cfg.current?.imageUrl,
+      ...cfg.history.slice(0, 10).map((h) => h.imageUrl),
+      ...excludeUrls,
+    ].filter(Boolean) as string[],
+  );
+  const ordered = orderCandidates(candidates, recent);
+
+  let lastError: unknown = null;
+  for (const candidate of ordered.slice(0, 12)) {
+    try {
+      const downloaded = await downloadImage(candidate.imageUrl);
+      setStagedPreviewFile(downloaded.file);
+      const preview: StagedPreview = {
+        id: downloaded.id,
+        file: downloaded.file,
+        imageUrl: candidate.imageUrl,
+        pageUrl: candidate.pageUrl,
+        provider: candidate.provider,
+        width: candidate.width,
+        height: candidate.height,
+        theme,
+      };
+      logger.info("wallpaper", "Staged candidate preview", {
+        theme: theme.label,
+        provider: candidate.provider,
+      });
+      return preview;
+    } catch (error) {
+      lastError = error;
+      logger.warn("wallpaper", "Preview candidate download failed, trying next", {
+        imageUrl: candidate.imageUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not download a suitable wallpaper preview for this theme. Please try again.");
+}
+
+// Apply an already downloaded staged candidate to the macOS desktop.
+export async function applyStagedPreview(preview: StagedPreview): Promise<WallpaperRecord> {
+  const cfg = settingsStore.get();
+  const absPath = path.join(WALLPAPERS_DIR, preview.file);
+  await setWallpaper(absPath);
+  const record: WallpaperRecord = {
+    id: preview.id,
+    file: preview.file,
+    imageUrl: preview.imageUrl,
+    pageUrl: preview.pageUrl,
+    provider: preview.provider,
+    width: preview.width,
+    height: preview.height,
+    themeLabel: preview.theme.label,
+    appliedAt: Date.now(),
+  };
+  const history = [record, ...cfg.history.filter((h) => h.imageUrl !== record.imageUrl)].slice(
+    0,
+    30,
+  );
+  await settingsStore.update({
+    theme: preview.theme,
+    current: record,
+    history,
+  });
+  setStagedPreviewFile(null);
+  void pruneCache();
+  logger.info("wallpaper", "Applied staged wallpaper", {
+    theme: preview.theme.label,
+    provider: record.provider,
+  });
+  broadcast("wallpaper:changed", { record });
+  return record;
 }
 
 // Apply the next wallpaper for the current theme. Tries several candidates in

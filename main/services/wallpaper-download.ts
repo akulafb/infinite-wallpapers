@@ -92,11 +92,14 @@ export async function downloadImage(imageUrl: string): Promise<DownloadedImage> 
   }
 }
 
+let stagedPreviewFile: string | null = null;
+
+export function setStagedPreviewFile(file: string | null): void {
+  stagedPreviewFile = file;
+}
+
 // Keep only the most recently modified MAX_CACHED_FILES images, never deleting
-// one that config still references. The protected set is derived here rather than
-// passed in: as an optional `keepFiles` parameter it was opt-in, and the call in
-// downloadImage() omitted it — silently deleting live history images and leaving
-// the Recent strip rendering broken tiles.
+// one that config still references or is currently staged for preview.
 export async function pruneCache(): Promise<void> {
   try {
     const entries = await fs.promises.readdir(WALLPAPERS_DIR);
@@ -104,6 +107,7 @@ export async function pruneCache(): Promise<void> {
     const cfg = settingsStore.get();
     const keep = new Set(cfg.history.map((record) => record.file));
     if (cfg.current) keep.add(cfg.current.file);
+    if (stagedPreviewFile) keep.add(stagedPreviewFile);
     const stats = await Promise.all(
       entries.map(async (name) => ({
         name,
