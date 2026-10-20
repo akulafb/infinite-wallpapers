@@ -27,6 +27,17 @@ export interface WallpaperRecord {
   appliedAt: number; // epoch ms
 }
 
+export interface StagedPreview {
+  id: string; // uuid, basename stem
+  file: string; // basename in wallpapers dir
+  imageUrl: string;
+  pageUrl: string;
+  provider: string;
+  width: number;
+  height: number;
+  theme: ThemeConfig;
+}
+
 export type ThemeSource = "system" | "light" | "dark";
 
 export interface AppConfig {

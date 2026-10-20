@@ -4,9 +4,10 @@ import type {
   AppConfig,
   ConfigResult,
   RotationState,
-  ThemeSource,
+  StagedPreview,
   ThemeCategory,
   ThemeConfig,
+  ThemeSource,
   WallpaperRecord,
 } from "./wallpaper-types";
 
@@ -21,6 +22,11 @@ export const wallpaperApi = {
   getConfig: () => ipc().invoke<ConfigResult>("config:get"),
   setPreset: (theme: ThemeConfig) => ipc().invoke<AppConfig>("theme:setPreset", theme),
   setCustom: (description: string) => ipc().invoke<AppConfig>("theme:setCustom", description),
+  stageTheme: (theme: ThemeConfig, excludeUrls?: string[]) =>
+    ipc().invoke<StagedPreview>("wallpaper:stage", { theme, excludeUrls }),
+  applyStaged: (preview: StagedPreview) =>
+    ipc().invoke<WallpaperRecord>("wallpaper:applyStaged", preview),
+  clearStaged: () => ipc().invoke<boolean>("wallpaper:clearStaged"),
   updateSettings: (
     patch: Partial<Pick<AppConfig, "frequency" | "matureContent" | "minWidth">>,
   ) => ipc().invoke<AppConfig>("settings:update", patch),

@@ -31,6 +31,8 @@ sealed interface Busy {
     data object Next : Busy
     data object Skip : Busy
     data object Custom : Busy
+    data object Apply : Busy
+    data object RefreshPreview : Busy
     data class Theme(val id: String) : Busy
     data class History(val id: String) : Busy
 }
@@ -71,15 +73,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun selectPreset(preset: Preset) = run(Busy.Theme(preset.id)) {
-        store.update { it.copy(theme = preset.toTheme()) }
-        c.wallpapers.applyNext("theme")
+    fun selectPreset(preset: Preset) = run(Busy.Theme(preset.id), restartClock = false) {
+        c.wallpapers.stagePreview(preset.toTheme())
     }
 
     fun applyCustom(description: String, onDone: () -> Unit) {
         val query = description.trim()
         if (query.isEmpty()) return
-        run(Busy.Custom) {
+        run(Busy.Custom, restartClock = false) {
             val theme = ThemeConfig(
                 id = "custom-${System.currentTimeMillis()}",
                 label = query.take(60),
@@ -87,11 +88,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 custom = true,
                 category = ThemeCategory.WEB,
             )
-            store.update { it.copy(theme = theme) }
-            c.wallpapers.applyNext("custom")
+            c.wallpapers.stagePreview(theme)
             onDone()
         }
     }
+
+    fun applyPreview() = run(Busy.Apply, restartClock = true) {
+        c.wallpapers.applyStaged()
+    }
+
+    fun tryAnotherPreview() = run(Busy.RefreshPreview, restartClock = false) {
+        c.wallpapers.stagePreview(store.get().theme)
+    }
+
+    fun cancelPreview() = c.wallpapers.cancelPreview()
 
     fun next() = run(Busy.Next) { c.wallpapers.applyNext("manual") }
 

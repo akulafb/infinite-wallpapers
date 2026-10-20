@@ -25,6 +25,17 @@ export interface WallpaperRecord {
   appliedAt: number;
 }
 
+export interface StagedPreview {
+  id: string;
+  file: string;
+  imageUrl: string;
+  pageUrl: string;
+  provider: string;
+  width: number;
+  height: number;
+  theme: ThemeConfig;
+}
+
 export type ThemeSource = "system" | "light" | "dark";
 
 export interface AppConfig {

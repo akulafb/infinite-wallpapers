@@ -58,6 +58,7 @@ data class AppConfig(
     val themeSource: ThemeSource = ThemeSource.SYSTEM,
     val paused: Boolean = false,
     val current: WallpaperRecord? = null,
+    val preview: WallpaperRecord? = null,
     val history: List<WallpaperRecord> = emptyList(), // most-recent first, capped
     val blocked: List<String> = emptyList(), // image URLs the user skipped
     val nextRunAt: Long? = null, // epoch ms of the next scheduled change (approximate)

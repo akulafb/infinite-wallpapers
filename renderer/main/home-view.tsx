@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Loader2, Pause, Play, RefreshCw, Settings, Shuffle, Wand2 } from "lucide-react";
+import { Ban, Check, Loader2, Pause, Play, RefreshCw, Settings, Shuffle, Wand2, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -21,7 +21,7 @@ import {
   wallpaperApi,
   wallpaperUrl,
 } from "../lib/wallpaper-api";
-import type { Frequency } from "../lib/wallpaper-types";
+import type { Frequency, StagedPreview, ThemeConfig } from "../lib/wallpaper-types";
 import { PRESETS, presetsFromIds, shuffleThemes, type Preset } from "./presets";
 import { ThemeCard } from "../components/theme-card";
 
@@ -110,6 +110,10 @@ export function HomeView() {
   const [visiblePresets, setVisiblePresets] = useState<Preset[]>(loadThemeGrid);
   const [isShuffling, setIsShuffling] = useState(false);
 
+  // Staged preview candidate (LIN-83 flow): preview before applying to desktop.
+  const [stagedPreview, setStagedPreview] = useState<StagedPreview | null>(null);
+  const [seenUrls, setSeenUrls] = useState<string[]>([]);
+
   const shuffleGrid = () => {
     const next = shuffleThemes(
       THEME_GRID_SIZE,
@@ -154,33 +158,81 @@ export function HomeView() {
     toast.error(cleanErrorMessage(error));
   };
 
-  const selectPreset = useMutation({
+  const cancelPreview = () => {
+    setStagedPreview(null);
+    setSeenUrls([]);
+    void wallpaperApi.clearStaged();
+  };
+
+  // Stage a preset wallpaper for preview without applying to desktop.
+  const stagePreset = useMutation({
     mutationFn: async (preset: Preset) => {
-      await wallpaperApi.setPreset({
+      const theme: ThemeConfig = {
         id: preset.id,
         label: preset.label,
         query: preset.query,
         kind: "preset",
         category: preset.category,
-      });
-      return wallpaperApi.next();
+      };
+      return wallpaperApi.stageTheme(theme);
     },
-    onSuccess: () => {
+    onSuccess: (preview) => {
       setPermissionError(false);
-      invalidate();
+      setStagedPreview(preview);
+      setSeenUrls([preview.imageUrl]);
     },
     onError: onApplyError,
   });
 
-  const applyCustom = useMutation({
+  // Stage a custom description wallpaper for preview without applying to desktop.
+  const stageCustom = useMutation({
     mutationFn: async (desc: string) => {
-      await wallpaperApi.setCustom(desc);
-      return wallpaperApi.next();
+      const query = desc.trim();
+      const theme: ThemeConfig = {
+        id: `custom-${Date.now()}`,
+        label: query.slice(0, 60),
+        query,
+        kind: "custom",
+        category: "web",
+      };
+      return wallpaperApi.stageTheme(theme);
+    },
+    onSuccess: (preview) => {
+      setPermissionError(false);
+      setStagedPreview(preview);
+      setSeenUrls([preview.imageUrl]);
+      setDescription("");
+    },
+    onError: onApplyError,
+  });
+
+  // Fetch and stage another candidate for the currently staged theme.
+  const refreshPreview = useMutation({
+    mutationFn: async () => {
+      if (!stagedPreview) return null;
+      return wallpaperApi.stageTheme(stagedPreview.theme, seenUrls);
+    },
+    onSuccess: (preview) => {
+      if (!preview) return;
+      setPermissionError(false);
+      setStagedPreview(preview);
+      setSeenUrls((prev) => [...prev, preview.imageUrl]);
+    },
+    onError: onApplyError,
+  });
+
+  // Apply the staged candidate to macOS desktop.
+  const applyStaged = useMutation({
+    mutationFn: async () => {
+      if (!stagedPreview) return null;
+      return wallpaperApi.applyStaged(stagedPreview);
     },
     onSuccess: () => {
       setPermissionError(false);
-      setDescription("");
+      setStagedPreview(null);
+      setSeenUrls([]);
       invalidate();
+      toast.success("Applied as macOS desktop wallpaper");
     },
     onError: onApplyError,
   });
@@ -188,6 +240,7 @@ export function HomeView() {
   const nextWallpaper = useMutation({
     mutationFn: () => wallpaperApi.next(),
     onSuccess: () => {
+      cancelPreview();
       setPermissionError(false);
       invalidate();
     },
@@ -197,6 +250,7 @@ export function HomeView() {
   const skipWallpaper = useMutation({
     mutationFn: () => wallpaperApi.skip(),
     onSuccess: () => {
+      cancelPreview();
       setPermissionError(false);
       invalidate();
     },
@@ -206,6 +260,7 @@ export function HomeView() {
   const applyHistory = useMutation({
     mutationFn: (id: string) => wallpaperApi.applyFromHistory(id),
     onSuccess: () => {
+      cancelPreview();
       setPermissionError(false);
       invalidate();
     },
@@ -228,9 +283,11 @@ export function HomeView() {
   });
 
   const config = data?.config;
-  const isApplying =
-    selectPreset.isPending ||
-    applyCustom.isPending ||
+  const isBusy =
+    stagePreset.isPending ||
+    stageCustom.isPending ||
+    refreshPreview.isPending ||
+    applyStaged.isPending ||
     nextWallpaper.isPending ||
     skipWallpaper.isPending ||
     applyHistory.isPending;
@@ -245,11 +302,21 @@ export function HomeView() {
           ? `Next change in ${formatRemaining(config.nextRunAt - now)}`
           : `Changes ${config.frequency}`;
 
+  const activeThemeId = stagedPreview ? stagedPreview.theme.id : config?.theme.id;
+
+  const headerTitle = stagedPreview
+    ? `${stagedPreview.theme.label} (Preview)`
+    : (config?.theme.label ?? "Infinite Wallpapers");
+
+  const headerSubtitle = stagedPreview
+    ? "Previewing candidate — tap Apply to set as desktop"
+    : statusText;
+
   return (
     <ScrollArea
       className="h-full"
-      title={config?.theme.label ?? "Infinite Wallpapers"}
-      subtitle={statusText}
+      title={headerTitle}
+      subtitle={headerSubtitle}
       actions={
         <>
           <Button
@@ -275,9 +342,83 @@ export function HomeView() {
       }
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-4 pb-10">
-        {/* Current wallpaper */}
+        {/* Hero Card: Staged Preview or Current Wallpaper */}
         {isLoading || !config ? (
           <div className="aspect-video w-full animate-pulse rounded-card bg-foreground-5" />
+        ) : stagedPreview ? (
+          <div className="overflow-hidden rounded-card border-2 border-accent/70 shadow-lg">
+            <div className="relative aspect-video w-full bg-foreground-5">
+              <img
+                src={wallpaperUrl(stagedPreview.file)}
+                alt={stagedPreview.theme.label}
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                <Badge color="primary">Preview</Badge>
+                <Badge>{stagedPreview.theme.label}</Badge>
+                {stagedPreview.width > 0 && (
+                  <Badge>
+                    {stagedPreview.width}×{stagedPreview.height}
+                  </Badge>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={cancelPreview}
+                disabled={isBusy}
+                aria-label="Cancel preview"
+                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-opacity hover:bg-black/80 disabled:opacity-50"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2 p-3 bg-card">
+              <div className="min-w-0">
+                <Text variant="small-strong" truncate>
+                  {stagedPreview.theme.label}
+                </Text>
+                <Text variant="mini" color="tertiary">
+                  Source: {stagedPreview.provider} • Not yet applied as desktop
+                </Text>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  variant="muted"
+                  size="small"
+                  disabled={isBusy}
+                  onClick={cancelPreview}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="muted"
+                  size="small"
+                  disabled={isBusy}
+                  onClick={() => refreshPreview.mutate()}
+                >
+                  {refreshPreview.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  Try another
+                </Button>
+                <Button
+                  variant="accent"
+                  size="small"
+                  disabled={isBusy}
+                  onClick={() => applyStaged.mutate()}
+                >
+                  {applyStaged.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Check className="size-4" />
+                  )}
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : config.current ? (
           <div className="overflow-hidden rounded-card border border-field">
             <div className="relative aspect-video w-full bg-foreground-5">
@@ -308,7 +449,7 @@ export function HomeView() {
                 <Button
                   variant="muted"
                   size="small"
-                  disabled={isApplying}
+                  disabled={isBusy}
                   onClick={() => skipWallpaper.mutate()}
                 >
                   {skipWallpaper.isPending ? (
@@ -316,12 +457,12 @@ export function HomeView() {
                   ) : (
                     <Ban className="size-4" />
                   )}
-                  Skip
+                  Skip & block
                 </Button>
                 <Button
                   variant="accent"
                   size="small"
-                  disabled={isApplying}
+                  disabled={isBusy}
                   onClick={() => nextWallpaper.mutate()}
                 >
                   {nextWallpaper.isPending ? (
@@ -338,7 +479,7 @@ export function HomeView() {
           <div className="relative rounded-card border border-field p-6">
             <EmptyState
               title="No wallpaper yet"
-              description="Pick a theme below or describe what you want — Infinite Wallpapers will find a real one from the web and set it as your desktop."
+              description="Pick a theme below or describe what you want. The app finds a real one on the web so you can preview and apply it."
             />
           </div>
         )}
@@ -368,7 +509,7 @@ export function HomeView() {
         {/* Theme picker */}
         <Section
           title="Theme"
-          description="Tap a theme to switch your wallpaper instantly."
+          description="Tap a theme to preview wallpapers."
           actions={
             <Button variant="muted" size="small" onClick={shuffleGrid}>
               <Shuffle className={`size-4 ${isShuffling ? "animate-spin" : ""}`} />
@@ -381,10 +522,10 @@ export function HomeView() {
               <ThemeCard
                 key={preset.id}
                 preset={preset}
-                selected={config?.theme.id === preset.id}
-                loading={selectPreset.isPending && selectPreset.variables?.id === preset.id}
-                disabled={isApplying}
-                onSelect={() => selectPreset.mutate(preset)}
+                selected={activeThemeId === preset.id}
+                loading={stagePreset.isPending && stagePreset.variables?.id === preset.id}
+                disabled={isBusy}
+                onSelect={() => stagePreset.mutate(preset)}
               />
             ))}
           </div>
@@ -408,15 +549,15 @@ export function HomeView() {
               variant="filled"
               size="small"
               className="shrink-0"
-              disabled={!description.trim() || isApplying}
-              onClick={() => applyCustom.mutate(description)}
+              disabled={!description.trim() || isBusy}
+              onClick={() => stageCustom.mutate(description)}
             >
-              {applyCustom.isPending ? (
+              {stageCustom.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Wand2 className="size-4" />
               )}
-              Use description
+              Preview wallpaper
             </Button>
           </div>
         </Section>
@@ -458,8 +599,11 @@ export function HomeView() {
                 <button
                   key={record.id}
                   type="button"
-                  onClick={() => applyHistory.mutate(record.id)}
-                  disabled={isApplying}
+                  onClick={() => {
+                    cancelPreview();
+                    applyHistory.mutate(record.id);
+                  }}
+                  disabled={isBusy}
                   title={record.themeLabel}
                   className="shrink-0 overflow-hidden rounded-control border border-field transition-opacity hover:opacity-90 disabled:opacity-60"
                 >

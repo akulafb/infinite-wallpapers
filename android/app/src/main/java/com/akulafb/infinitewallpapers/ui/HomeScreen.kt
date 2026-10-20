@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -124,7 +126,18 @@ fun HomeScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
-            item { CurrentWallpaper(config, vm.wallpapersDir, busy, vm::skip, vm::next) }
+            item {
+                CurrentWallpaper(
+                    config = config,
+                    dir = vm.wallpapersDir,
+                    busy = busy,
+                    onSkip = vm::skip,
+                    onNext = vm::next,
+                    onApply = vm::applyPreview,
+                    onRefreshPreview = vm::tryAnotherPreview,
+                    onCancelPreview = vm::cancelPreview,
+                )
+            }
 
             if (!hasKey) {
                 item {
@@ -144,7 +157,7 @@ fun HomeScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             item {
                 Section(
                     "Theme",
-                    "Tap a theme to switch your wallpaper now.",
+                    "Tap a theme to preview wallpapers.",
                     action = { TextButton(onClick = vm::shuffle) { Text("🔀 Shuffle") } },
                 ) {
                     grid.chunked(2).forEach { row ->
@@ -232,48 +245,117 @@ private fun CurrentWallpaper(
     busy: Busy?,
     onSkip: () -> Unit,
     onNext: () -> Unit,
+    onApply: () -> Unit,
+    onRefreshPreview: () -> Unit,
+    onCancelPreview: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
+        val preview = config.preview
         val current = config.current
-        if (current == null) {
+        val displayed = preview ?: current
+
+        if (displayed == null) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("No wallpaper yet", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Pick a theme below or describe what you want. The app finds a real one on the web and sets it.",
+                    "Pick a theme below or describe what you want. The app finds a real one on the web so you can preview and apply it.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             return@Card
         }
+
+        val isPreview = preview != null
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             AsyncImage(
-                model = File(dir, current.file),
-                contentDescription = current.themeLabel,
+                model = File(dir, displayed.file),
+                contentDescription = displayed.themeLabel,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.width(130.dp).aspectRatio(9f / 19.5f).clip(RoundedCornerShape(14.dp)),
             )
             Column(Modifier.weight(1f).height(282.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(current.themeLabel, style = MaterialTheme.typography.titleMedium)
-                    if (current.width > 0) {
+                    if (isPreview) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                            ) {
+                                Text(
+                                    "PREVIEW",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                            IconButton(
+                                onClick = onCancelPreview,
+                                enabled = busy == null,
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Cancel preview",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        displayed.themeLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (displayed.width > 0) {
                         Text(
-                            "${current.width}×${current.height}",
+                            "${displayed.width}×${displayed.height}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = busy == null, onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                        if (busy == Busy.Next) Spinner() else {
-                            Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Change now")
+                    if (isPreview) {
+                        Button(
+                            enabled = busy == null,
+                            onClick = onApply,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (busy == Busy.Apply) Spinner() else {
+                                Icon(Icons.Filled.Check, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Apply")
+                            }
                         }
-                    }
-                    FilledTonalButton(enabled = busy == null, onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
-                        if (busy == Busy.Skip) Spinner() else Text("Skip & block")
+                        FilledTonalButton(
+                            enabled = busy == null,
+                            onClick = onRefreshPreview,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (busy == Busy.RefreshPreview) Spinner() else {
+                                Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Try another")
+                            }
+                        }
+                    } else {
+                        Button(enabled = busy == null, onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+                            if (busy == Busy.Next) Spinner() else {
+                                Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Change now")
+                            }
+                        }
+                        FilledTonalButton(enabled = busy == null, onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+                            if (busy == Busy.Skip) Spinner() else Text("Skip & block")
+                        }
                     }
                 }
             }

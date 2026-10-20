@@ -113,7 +113,11 @@ class WallpaperService(
                     appliedAt = System.currentTimeMillis(),
                 )
                 store.update { c ->
-                    c.copy(current = record, history = listOf(record) + c.history.filter { it.imageUrl != record.imageUrl })
+                    c.copy(
+                        current = record,
+                        preview = null,
+                        history = listOf(record) + c.history.filter { it.imageUrl != record.imageUrl },
+                    )
                 }
                 pruneCache()
                 Log.i("wallpaper", "Applied new wallpaper ($reason, ${record.provider})")
@@ -140,8 +144,103 @@ class WallpaperService(
             throw WallpaperNotAllowedException()
         }
         val updated = record.copy(appliedAt = System.currentTimeMillis())
-        store.update { c -> c.copy(current = updated, history = listOf(updated) + c.history.filter { it.id != id }) }
+        store.update { c ->
+            c.copy(
+                current = updated,
+                preview = null,
+                history = listOf(updated) + c.history.filter { it.id != id },
+            )
+        }
         updated
+    }
+
+    suspend fun stagePreview(theme: ThemeConfig): WallpaperRecord = mutex.withLock {
+        stagePreviewLocked(theme)
+    }
+
+    private suspend fun stagePreviewLocked(theme: ThemeConfig): WallpaperRecord {
+        val cfg = store.get()
+        val candidates = search.search(
+            query = theme.query,
+            category = theme.category,
+            blocked = cfg.blocked,
+            apiKey = store.serperKey(),
+            screen = screenSize(),
+        )
+        if (candidates.isEmpty()) throw NoImagesException()
+
+        val recent = (listOfNotNull(cfg.current?.imageUrl, cfg.preview?.imageUrl) + cfg.history.take(10).map { it.imageUrl }).toSet()
+        val (seen, fresh) = candidates.partition { it.imageUrl in recent }
+        val ordered = fresh.shuffled() + seen.shuffled()
+
+        var lastError: Exception? = null
+        for (candidate in ordered.take(12)) {
+            try {
+                val file = download(candidate.imageUrl)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.path, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    file.delete()
+                    throw IllegalStateException("Could not read image")
+                }
+                val record = WallpaperRecord(
+                    id = file.nameWithoutExtension,
+                    file = file.name,
+                    imageUrl = candidate.imageUrl,
+                    pageUrl = candidate.pageUrl,
+                    provider = candidate.provider,
+                    width = if (candidate.width > 0) candidate.width else bounds.outWidth,
+                    height = if (candidate.height > 0) candidate.height else bounds.outHeight,
+                    themeLabel = theme.label,
+                    appliedAt = 0L,
+                )
+                val oldPreview = cfg.preview
+                if (oldPreview != null && oldPreview.file != record.file && oldPreview.file != cfg.current?.file && cfg.history.none { it.file == oldPreview.file }) {
+                    File(store.wallpapersDir, oldPreview.file).delete()
+                }
+                store.update { it.copy(theme = theme, preview = record) }
+                pruneCache()
+                Log.i("wallpaper", "Staged new preview (${theme.label}, ${record.provider})")
+                return record
+            } catch (e: Exception) {
+                lastError = e
+                Log.w("wallpaper", "Candidate preview failed, trying next: ${candidate.imageUrl}", e)
+            }
+        }
+        throw lastError ?: IllegalStateException("Could not download a suitable wallpaper. Please try again.")
+    }
+
+    suspend fun applyStaged(): WallpaperRecord = mutex.withLock {
+        val cfg = store.get()
+        val preview = cfg.preview ?: throw IllegalStateException("No preview to apply.")
+        checkAllowed()
+        val file = File(store.wallpapersDir, preview.file)
+        if (!file.exists()) throw IllegalStateException("Preview image file no longer exists.")
+        try {
+            setWallpaper(file, cfg.target)
+        } catch (e: SecurityException) {
+            throw WallpaperNotAllowedException()
+        }
+        val record = preview.copy(appliedAt = System.currentTimeMillis())
+        store.update { c ->
+            c.copy(
+                current = record,
+                preview = null,
+                history = listOf(record) + c.history.filter { it.imageUrl != record.imageUrl },
+            )
+        }
+        pruneCache()
+        Log.i("wallpaper", "Applied staged wallpaper (${record.provider})")
+        record
+    }
+
+    fun cancelPreview() {
+        val cfg = store.get()
+        val preview = cfg.preview ?: return
+        if (preview.file != cfg.current?.file && cfg.history.none { it.file == preview.file }) {
+            File(store.wallpapersDir, preview.file).delete()
+        }
+        store.update { it.copy(preview = null) }
     }
 
     // Block the current image so it won't be picked again, then rotate.
@@ -262,7 +361,10 @@ class WallpaperService(
         val files = store.wallpapersDir.listFiles() ?: return
         if (files.size <= MAX_CACHED_FILES) return
         val cfg = store.get()
-        val keep = cfg.history.map { it.file }.toMutableSet().apply { cfg.current?.let { add(it.file) } }
+        val keep = cfg.history.map { it.file }.toMutableSet().apply {
+            cfg.current?.let { add(it.file) }
+            cfg.preview?.let { add(it.file) }
+        }
         files.sortedByDescending { it.lastModified() }
             .drop(MAX_CACHED_FILES)
             .filter { it.name !in keep }

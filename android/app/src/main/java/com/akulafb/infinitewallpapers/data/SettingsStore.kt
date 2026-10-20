@@ -65,8 +65,15 @@ class SettingsStore(context: Context) {
         val cfg = get()
         val history = cfg.history.filter { File(wallpapersDir, it.file).exists() }
         val currentGone = cfg.current != null && !File(wallpapersDir, cfg.current.file).exists()
-        if (history.size == cfg.history.size && !currentGone) return
-        update { it.copy(history = history, current = if (currentGone) null else it.current) }
+        val previewGone = cfg.preview != null && !File(wallpapersDir, cfg.preview.file).exists()
+        if (history.size == cfg.history.size && !currentGone && !previewGone) return
+        update {
+            it.copy(
+                history = history,
+                current = if (currentGone) null else it.current,
+                preview = if (previewGone) null else it.preview,
+            )
+        }
     }
 
     // ── Serper API key ────────────────────────────────────────────────

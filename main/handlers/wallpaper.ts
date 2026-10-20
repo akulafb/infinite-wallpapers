@@ -12,16 +12,21 @@ import { themeThumbnails } from "../services/theme-thumbnails.js";
 import {
   applyFromHistory,
   applyNext,
+  applyStagedPreview,
   previewCandidates,
+  setStagedPreviewFile,
   skipCurrent,
+  stageThemeWallpaper,
 } from "../services/wallpaper-service.js";
 import { checkAutomationPermission } from "../services/wallpaper-setter.js";
 import type {
   AppConfig,
   Frequency,
+  StagedPreview,
   ThemeCategory,
   ThemeConfig,
   ThemeSource,
+  WallpaperRecord,
 } from "../services/types.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -134,6 +139,42 @@ export function registerWallpaperHandlers(): void {
   });
 
   ipcMain.handle("wallpaper:preview", async () => previewCandidates());
+
+  ipcMain.handle("wallpaper:stage", async (_e, args: unknown): Promise<StagedPreview> => {
+    const r = asRecord(args);
+    const theme = parseTheme(r.theme);
+    const excludeUrls = Array.isArray(r.excludeUrls)
+      ? (r.excludeUrls.filter((u) => typeof u === "string") as string[])
+      : [];
+    return stageThemeWallpaper(theme, excludeUrls);
+  });
+
+  ipcMain.handle("wallpaper:applyStaged", async (_e, args: unknown): Promise<WallpaperRecord> => {
+    const r = asRecord(args);
+    const theme = parseTheme(r.theme);
+    const staged: StagedPreview = {
+      id: typeof r.id === "string" ? r.id : "",
+      file: typeof r.file === "string" ? r.file : "",
+      imageUrl: typeof r.imageUrl === "string" ? r.imageUrl : "",
+      pageUrl: typeof r.pageUrl === "string" ? r.pageUrl : "",
+      provider: typeof r.provider === "string" ? r.provider : "",
+      width: typeof r.width === "number" ? r.width : 0,
+      height: typeof r.height === "number" ? r.height : 0,
+      theme,
+    };
+    if (!staged.id || !staged.file) {
+      throw new Error("Invalid staged wallpaper preview");
+    }
+    const record = await applyStagedPreview(staged);
+    await rotationScheduler.reschedule();
+    refreshTray();
+    return record;
+  });
+
+  ipcMain.handle("wallpaper:clearStaged", async (): Promise<boolean> => {
+    setStagedPreviewFile(null);
+    return true;
+  });
 
   ipcMain.handle("wallpaper:next", async () => {
     const record = await applyNext("manual");
