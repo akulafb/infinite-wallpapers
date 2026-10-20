@@ -15,8 +15,8 @@ android {
         applicationId = "com.akulafb.infinitewallpapers"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
     }
 
     // Release signing comes from android/keystore.properties (git-ignored).
@@ -62,7 +62,7 @@ var playCredentials: String? = null
 
 play {
     playCredentials?.let { serviceAccountCredentials.set(file(it)) }
-    track.set("alpha")
+    track.set("production")
     defaultToAppBundles.set(true)
     releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
 }
